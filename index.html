@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Clay SDF Prototype</title>
+
+  <link rel="stylesheet" href="./styles.css" />
+
+  <!-- glMatrix -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js"></script>
+</head>
+<body>
+  <canvas id="glCanvas"></canvas>
+
+  <div id="overlay">
+    <div><b>Controls</b></div>
+    <div>Middle drag: rotate</div>
+    <div>Right drag: pan</div>
+    <div>Wheel: zoom</div>
+    <hr style="border:none;border-top:1px solid rgba(255,255,255,0.2);margin:6px 0;" />
+
+    <label style="user-select:none;font-size:11px;display:block;margin-bottom:4px;">
+      <input type="checkbox" id="invertY" checked />
+      Invert vertical drag (up = look down)
+    </label>
+
+    <div style="font-size:11px;margin-top:4px;margin-bottom:2px;"><b>Add primitive</b></div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px;">
+      <button id="addSphereBtn" style="font-size:11px;padding:2px 6px;cursor:pointer;">Sphere</button>
+      <button id="addBoxBtn" style="font-size:11px;padding:2px 6px;cursor:pointer;">Box</button>
+      <button id="addCylBtn" style="font-size:11px;padding:2px 6px;cursor:pointer;">Cylinder</button>
+    </div>
+
+    <div style="font-size:11px;margin-top:4px;margin-bottom:2px;"><b>Boolean mode</b></div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px;">
+      <button id="modeUnionBtn" style="font-size:11px;padding:2px 6px;cursor:pointer;">Union</button>
+      <button id="modeSubtractBtn" style="font-size:11px;padding:2px 6px;cursor:pointer;">Subtract</button>
+      <button id="modeIntersectBtn" style="font-size:11px;padding:2px 6px;cursor:pointer;">Intersect</button>
+    </div>
+
+    <div style="font-size:10px;opacity:0.8;margin-top:4px;">
+      • Click a shape to select it<br />
+      • Drag shape = free move on plane (spheres can snap to spheres)<br />
+      • Click gizmo X/Y/Z arrow then drag = move along that axis<br />
+      • Delete key = remove selected shape<br />
+      • Boolean mode applies to newly added shapes
+    </div>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
