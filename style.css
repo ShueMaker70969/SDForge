@@ -1,0 +1,27 @@
+/* UI panel */
+.ui-panel {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+
+  padding: 10px;
+  border-radius: 6px;
+
+  font-family: sans-serif;
+  font-size: 13px;
+
+  background: rgba(0, 0, 0, 0.05);
+  color: black;
+}
+
+/* spacing */
+.ui-panel label {
+  display: block;
+  cursor: pointer;
+}
+
+/* dark mode */
+body.dark .ui-panel {
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+}
