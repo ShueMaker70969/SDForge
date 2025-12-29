@@ -1,12 +1,13 @@
 import { mat4 } from "https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/esm/index.js";
 import { OrbitCamera } from "./camera.js";
 import { UIOptions } from "./ui_options.js";
+import { SDFRenderer } from "./sdf_renderer.js";
 
 
 const canvas = document.getElementById("glcanvas");
 
-const gl = canvas.getContext("webgl");
-if (!gl) alert("WebGL not supported");
+const gl = canvas.getContext("webgl2");
+if (!gl) alert("WebGL2 not supported");
 
 function resize() {
   canvas.width = window.innerWidth;
@@ -125,6 +126,7 @@ const gridVertexCount = positions.length / 3;
 
 const camera = new OrbitCamera();
 const ui = new UIOptions();
+const sdfRenderer = new SDFRenderer(gl);
 
 /* ============================
    Attribute definition
@@ -158,7 +160,6 @@ canvas.addEventListener("mousedown", e => {
 });
 
 window.addEventListener("mouseup", () => dragging = false);
-
 
 window.addEventListener("mousemove", e => {
   if (!dragging) return;
@@ -210,6 +211,10 @@ function render() {
     mat4.lookAt(view, camera.getEye(), camera.target, [0,1,0]);
     mat4.perspective(proj, Math.PI / 4, canvas.width / canvas.height, 0.1, 100.0);
 
+        // --- SDF pass ---
+    
+    gl.useProgram(program);
+
     gl.uniformMatrix4fv(uView, false, view);
     gl.uniformMatrix4fv(uProj, false, proj);
 
@@ -235,6 +240,13 @@ function render() {
     // restore for future objects
     gl.enable(gl.DEPTH_TEST);
 
+    sdfRenderer.draw({
+      view,
+      proj,
+      cameraPos: camera.getEye(),
+      width: canvas.width,
+      height: canvas.height,
+    });
   requestAnimationFrame(render);
 }
 
