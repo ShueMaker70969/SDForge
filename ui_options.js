@@ -1,9 +1,11 @@
 // ui_options.js
-
 export class UIOptions {
   constructor() {
     this.darkMode = false;
     this.invertY = false;
+
+    // callbacks (assigned from outside)
+    this.onAddSphere = null;
 
     this._buildUI();
   }
@@ -12,7 +14,7 @@ export class UIOptions {
     const panel = document.createElement("div");
     panel.className = "ui-panel";
 
-    // Dark mode
+    // ---- Dark mode ----
     const darkLabel = document.createElement("label");
     const darkCheckbox = document.createElement("input");
     darkCheckbox.type = "checkbox";
@@ -24,7 +26,7 @@ export class UIOptions {
 
     darkLabel.append(darkCheckbox, " Dark mode");
 
-    // Invert Y
+    // ---- Invert Y ----
     const invertLabel = document.createElement("label");
     const invertCheckbox = document.createElement("input");
     invertCheckbox.type = "checkbox";
@@ -35,7 +37,23 @@ export class UIOptions {
 
     invertLabel.append(invertCheckbox, " Invert Y rotation");
 
-    panel.append(darkLabel, invertLabel);
+    // ---- Add Sphere button ----
+    const addSphereBtn = document.createElement("button");
+    addSphereBtn.textContent = "Add Sphere";
+
+    addSphereBtn.addEventListener("click", () => {
+      if (this.onAddSphere) {
+        this.onAddSphere();
+      }
+    });
+
+    panel.append(
+      darkLabel,
+      invertLabel,
+      document.createElement("hr"),
+      addSphereBtn
+    );
+
     document.body.appendChild(panel);
   }
 }

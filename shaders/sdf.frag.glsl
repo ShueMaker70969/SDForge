@@ -7,6 +7,8 @@ out vec4 outColor;
 uniform vec3 uCameraPos;
 uniform mat4 uView;
 uniform mat4 uProj;
+uniform mat4 uInvView;
+uniform mat4 uInvProj;
 
 // ---------------- SDF ----------------
 float sdSphere(vec3 p, float r) {
@@ -65,12 +67,13 @@ void main() {
   vec2 ndc = vUV * 2.0 - 1.0;
 
   vec4 rayClip = vec4(ndc, -1.0, 1.0);
-  vec4 rayView = inverse(uProj) * rayClip;
+
+  vec4 rayView = uInvProj * rayClip;
   rayView = vec4(rayView.xy, -1.0, 0.0);
 
   vec3 ro = uCameraPos;
-  vec3 rd = normalize((inverse(uView) * rayView).xyz);
-
+  vec3 rd = normalize((uInvView * rayView).xyz);
+  
   float t;
   if (!raymarch(ro, rd, t)) {
     discard;

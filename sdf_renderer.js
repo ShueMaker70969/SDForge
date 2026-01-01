@@ -55,10 +55,12 @@ export class SDFRenderer {
 
     this.uView   = gl.getUniformLocation(this.program, "uView");
     this.uProj   = gl.getUniformLocation(this.program, "uProj");
+    this.uInvView = gl.getUniformLocation(this.program, "uInvView");
+    this.uInvProj = gl.getUniformLocation(this.program, "uInvProj");
     this.uCamPos = gl.getUniformLocation(this.program, "uCameraPos");
   }
 
-  draw({ view, proj, cameraPos, width, height }) {
+  draw({ view, proj, invView, invProj, cameraPos, width, height }) {
     const gl = this.gl;
 
     gl.useProgram(this.program);
@@ -66,6 +68,8 @@ export class SDFRenderer {
 
     gl.uniformMatrix4fv(this.uView, false, view);
     gl.uniformMatrix4fv(this.uProj, false, proj);
+    gl.uniformMatrix4fv(this.uInvView, false, invView);
+    gl.uniformMatrix4fv(this.uInvProj, false, invProj);
     gl.uniform3fv(this.uCamPos, cameraPos);
 
     gl.drawArrays(gl.TRIANGLES, 0, 3);

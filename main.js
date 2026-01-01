@@ -3,11 +3,31 @@ import { OrbitCamera } from "./camera.js";
 import { UIOptions } from "./ui_options.js";
 import { SDFRenderer } from "./sdf_renderer.js";
 
+const MAX_SHAPES = 16;
+const SHAPE_SPHERE = 0;
+
+//VERY IMPORTANT. Keeps track of all the shapes in the scene.
+const shapes = [];
 
 const canvas = document.getElementById("glcanvas");
 
 const gl = canvas.getContext("webgl2");
 if (!gl) alert("WebGL2 not supported");
+
+function addSphereAtOrigin() {
+  if (shapes.length >= MAX_SHAPES) {
+    console.warn("Max shape count reached");
+    return;
+  }
+
+  shapes.push({
+    type: SHAPE_SPHERE,
+    pos: [0, 1, 0],      // slightly above ground
+    params: [1.0, 0, 0, 0] // radius = 1
+  });
+
+  uploadShapes();
+}
 
 function resize() {
   canvas.width = window.innerWidth;
@@ -211,6 +231,13 @@ function render() {
     mat4.lookAt(view, camera.getEye(), camera.target, [0,1,0]);
     mat4.perspective(proj, Math.PI / 4, canvas.width / canvas.height, 0.1, 100.0);
 
+    //ADDITIONAL INVERSE VIEW MATRIX
+    const invView = mat4.create();
+    const invProj = mat4.create();
+
+    mat4.invert(invView, view);
+    mat4.invert(invProj, proj);
+
         // --- SDF pass ---
     
     gl.useProgram(program);
@@ -243,6 +270,8 @@ function render() {
     sdfRenderer.draw({
       view,
       proj,
+      invView,
+      invProj,
       cameraPos: camera.getEye(),
       width: canvas.width,
       height: canvas.height,
