@@ -58,20 +58,48 @@ export class SDFRenderer {
     this.uInvView = gl.getUniformLocation(this.program, "uInvView");
     this.uInvProj = gl.getUniformLocation(this.program, "uInvProj");
     this.uCamPos = gl.getUniformLocation(this.program, "uCameraPos");
+
+    //The stuff necessary for the shape list, that defines the shapes in scene
+    this.uShapeCount = gl.getUniformLocation(this.program, "uShapeCount");
+    this.uShapePos   = gl.getUniformLocation(this.program, "uShapePos");
+    this.uShapeType  = gl.getUniformLocation(this.program, "uShapeType");
+    this.uShapeParams= gl.getUniformLocation(this.program, "uShapeParams");
+
+    this.uSelectedShape = gl.getUniformLocation(this.program, "uSelectedShape");
+  }
+  setShapes({ count, positions, types, params }) {
+    const gl = this.gl;
+    gl.useProgram(this.program);
+
+    gl.uniform1i(this.uShapeCount, count);
+    gl.uniform3fv(this.uShapePos, positions);
+    gl.uniform1iv(this.uShapeType, types);
+    gl.uniform4fv(this.uShapeParams, params);
   }
 
-  draw({ view, proj, invView, invProj, cameraPos, width, height }) {
-    const gl = this.gl;
 
-    gl.useProgram(this.program);
-    gl.viewport(0, 0, width, height);
+  draw({ view, proj, invView, invProj, cameraPos, width, height, shapeData, selectedShape}) {
+  const gl = this.gl;
 
-    gl.uniformMatrix4fv(this.uView, false, view);
-    gl.uniformMatrix4fv(this.uProj, false, proj);
-    gl.uniformMatrix4fv(this.uInvView, false, invView);
-    gl.uniformMatrix4fv(this.uInvProj, false, invProj);
-    gl.uniform3fv(this.uCamPos, cameraPos);
+  gl.useProgram(this.program);
+  gl.viewport(0, 0, width, height);
 
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // camera uniforms
+  gl.uniformMatrix4fv(this.uView, false, view);
+  gl.uniformMatrix4fv(this.uProj, false, proj);
+  gl.uniformMatrix4fv(this.uInvView, false, invView);
+  gl.uniformMatrix4fv(this.uInvProj, false, invProj);
+  gl.uniform3fv(this.uCamPos, cameraPos);
+
+  // shape uniforms MUST be here
+  gl.uniform1i(this.uShapeCount, shapeData.count);
+  gl.uniform3fv(this.uShapePos, shapeData.positions);
+  gl.uniform1iv(this.uShapeType, shapeData.types);
+  gl.uniform4fv(this.uShapeParams, shapeData.params);
+
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  //selected shape is passed on, for the outline generation
+  gl.uniform1i(this.uSelectedShape, selectedShape);
   }
 }

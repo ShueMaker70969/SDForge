@@ -1,4 +1,5 @@
-import { mat4 } from "https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/esm/index.js";
+import { mat4, vec3, vec4 } 
+  from "https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/esm/index.js";
 import { OrbitCamera } from "./camera.js";
 import { UIOptions } from "./ui_options.js";
 import { SDFRenderer } from "./sdf_renderer.js";
@@ -6,8 +7,13 @@ import { SDFRenderer } from "./sdf_renderer.js";
 const MAX_SHAPES = 16;
 const SHAPE_SPHERE = 0;
 
+let invView = mat4.create();
+let invProj = mat4.create();
+
+//=================================================
 //VERY IMPORTANT. Keeps track of all the shapes in the scene.
 const shapes = [];
+//=================================================
 
 const canvas = document.getElementById("glcanvas");
 
@@ -28,6 +34,144 @@ function addSphereAtOrigin() {
 
   uploadShapes();
 }
+
+function computeMouseRay(mouseX, mouseY) {
+  // 1. Convert mouse to NDC
+  const ndcX = (mouseX / canvas.width) * 2 - 1;
+  const ndcY = 1 - (mouseY / canvas.height) * 2; // flip Y
+
+  // 2. Clip space
+  const rayClip = [ndcX, ndcY, -1, 1];
+
+  // 3. View space
+  const rayView = vec4.transformMat4([], rayClip, invProj);
+  rayView[0] /= rayView[3];
+  rayView[1] /= rayView[3];
+  rayView[2] /= rayView[3];
+  rayView[3] = 0.0; // direction
+
+  // 4. World space
+  const rayWorld4 = vec4.transformMat4([], rayView, invView);
+  const rayDir = vec3.normalize([], rayWorld4.slice(0, 3));
+
+  return {
+    origin: camera.getEye(),
+    dir: rayDir,
+  };
+}
+
+//Function used to select shape when clicking
+function pickShape(rayOrigin, rayDir) {
+  let bestT = Infinity;
+  let hitIndex = -1;
+
+  for (let i = 0; i < shapes.length; i++) {
+    const s = shapes[i];
+    if (s.type !== SHAPE_SPHERE) continue;
+
+    // Ray–sphere intersection
+    const oc = [
+      rayOrigin[0] - s.pos[0],
+      rayOrigin[1] - s.pos[1],
+      rayOrigin[2] - s.pos[2],
+    ];
+
+    const b = oc[0]*rayDir[0] + oc[1]*rayDir[1] + oc[2]*rayDir[2];
+    const c = oc[0]*oc[0] + oc[1]*oc[1] + oc[2]*oc[2] - s.params[0]*s.params[0];
+    const h = b*b - c;
+
+    if (h < 0) continue;
+
+    const t = -b - Math.sqrt(h);
+    if (t > 0 && t < bestT) {
+      bestT = t;
+      hitIndex = i;
+    }
+  }
+
+  return hitIndex;
+}
+
+let selectedShape = -1;
+
+canvas.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+
+  const ray = computeMouseRay(e.clientX, e.clientY);
+  selectedShape = pickShape(ray.origin, ray.dir);
+
+  console.log("Selected shape:", selectedShape);
+});
+
+
+//this function uploads the defined sdfs to the scene through the "shapes" list
+function uploadShapes() {
+  const posData   = new Float32Array(MAX_SHAPES * 3);
+  const typeData  = new Int32Array(MAX_SHAPES);
+  const paramData = new Float32Array(MAX_SHAPES * 4);
+
+  shapes.forEach((s, i) => {
+    posData.set(s.pos, i * 3);
+    typeData[i] = s.type;
+    paramData.set(s.params, i * 4);
+  });
+
+  sdfRenderer.setShapes({
+    count: shapes.length,
+    positions: posData,
+    types: typeData,
+    params: paramData,
+  });
+}
+
+function drawGizmo(pos, activeAxis = -1) {
+  const L = 1.2; // gizmo axis length
+
+  const verts = new Float32Array([
+    // X axis
+    pos[0], pos[1], pos[2],
+    pos[0] + L, pos[1], pos[2],
+
+    // Y axis
+    pos[0], pos[1], pos[2],
+    pos[0], pos[1] + L, pos[2],
+
+    // Z axis
+    pos[0], pos[1], pos[2],
+    pos[0], pos[1], pos[2] + L,
+  ]);
+
+  const highlight = [1.0, 1.0, 0.0]; // yellow
+  const colors = new Float32Array([
+    ...(activeAxis === 0 ? highlight : [1,0,0]),
+    ...(activeAxis === 0 ? highlight : [1,0,0]),
+
+    ...(activeAxis === 1 ? highlight : [0,0,1]),
+    ...(activeAxis === 1 ? highlight : [0,0,1]),
+
+    ...(activeAxis === 2 ? highlight : [0,1,0]),
+    ...(activeAxis === 2 ? highlight : [0,1,0]),
+  ]);
+
+  // OPTIONAL: always-visible gizmo
+  gl.disable(gl.DEPTH_TEST);
+
+  // Position
+  gl.bindBuffer(gl.ARRAY_BUFFER, gizmoPosBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
+  gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+
+  // Color
+  gl.bindBuffer(gl.ARRAY_BUFFER, gizmoColorBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
+  gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
+
+  gl.drawArrays(gl.LINES, 0, 6);
+
+  gl.enable(gl.DEPTH_TEST);
+}
+
+
 
 function resize() {
   canvas.width = window.innerWidth;
@@ -60,7 +204,6 @@ void main() {
   gl_FragColor = vec4(vColor, 1.0);
 }
 `;
-
 
 function createShader(type, src) {
   const s = gl.createShader(type);
@@ -130,6 +273,12 @@ const axisColors = new Float32Array([
   0, 1, 0,
 ]);
 
+
+// Gizmo buffers (create once)
+const gizmoPosBuffer = gl.createBuffer();
+const gizmoColorBuffer = gl.createBuffer();
+
+//azis buffer
 const axisPosBuffer = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, axisPosBuffer);
 gl.bufferData(gl.ARRAY_BUFFER, axisPositions, gl.STATIC_DRAW);
@@ -148,6 +297,9 @@ const camera = new OrbitCamera();
 const ui = new UIOptions();
 const sdfRenderer = new SDFRenderer(gl);
 
+ui.onAddSphere = () => {
+  addSphereAtOrigin();
+};
 /* ============================
    Attribute definition
 ============================ */
@@ -173,10 +325,16 @@ let button = 0;
 let flip_vertical = true;
 
 canvas.addEventListener("mousedown", e => {
+  if (e.button !== 1) {
+    dragging = false;
+    return;
+  }
+
   dragging = true;
   lastX = e.clientX;
   lastY = e.clientY;
   button = e.button;
+  e.preventDefault(); // avoid default middle-click behavior
 });
 
 window.addEventListener("mouseup", () => dragging = false);
@@ -193,12 +351,12 @@ window.addEventListener("mousemove", e => {
   lastX = e.clientX;
   lastY = e.clientY;
 
-  if (button === 0) {
-    camera.rotate(dx, dyRotate);
-  }
-
-  if (button === 2) {
-    camera.pan(dx * canvas.width, dyPan * canvas.height);
+  if (button === 1) {
+    if (e.shiftKey) {
+      camera.pan(dx * canvas.width, dyPan * canvas.height);
+    } else {
+      camera.rotate(dx, dyRotate);
+    }
   }
 });
 
@@ -217,6 +375,19 @@ const uView = gl.getUniformLocation(program, "uView");
 const uProj = gl.getUniformLocation(program, "uProj");
 
 function render() {
+    // ---- build shape uniform data ----
+    const shapePosData   = new Float32Array(MAX_SHAPES * 3);
+    const shapeTypeData  = new Int32Array(MAX_SHAPES);
+    const shapeParamData = new Float32Array(MAX_SHAPES * 4);
+
+    for (let i = 0; i < shapes.length; i++) {
+      const s = shapes[i];
+
+      shapePosData.set(s.pos, i * 3);
+      shapeTypeData[i] = s.type;
+      shapeParamData.set(s.params, i * 4);
+    }
+
     if (ui.darkMode) {
     gl.clearColor(0.08, 0.08, 0.08, 1);
     } else {
@@ -232,9 +403,6 @@ function render() {
     mat4.perspective(proj, Math.PI / 4, canvas.width / canvas.height, 0.1, 100.0);
 
     //ADDITIONAL INVERSE VIEW MATRIX
-    const invView = mat4.create();
-    const invProj = mat4.create();
-
     mat4.invert(invView, view);
     mat4.invert(invProj, proj);
 
@@ -275,7 +443,23 @@ function render() {
       cameraPos: camera.getEye(),
       width: canvas.width,
       height: canvas.height,
+      shapeData: {
+        count: shapes.length,
+        positions: shapePosData,
+        types: shapeTypeData,
+        params: shapeParamData,
+      },
+      selectedShape
     });
+    gl.useProgram(program);
+    gl.uniformMatrix4fv(uView, false, view);
+    gl.uniformMatrix4fv(uProj, false, proj);
+
+    // draw gizmo
+    if (selectedShape !== -1) {
+      drawGizmo(shapes[selectedShape].pos);
+    }
+
   requestAnimationFrame(render);
 }
 
