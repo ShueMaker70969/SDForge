@@ -5,7 +5,11 @@ import { UIOptions } from "./ui_options.js";
 import { SDFRenderer } from "./sdf_renderer.js";
 
 const MAX_SHAPES = 16;
-const SHAPE_SPHERE = 0;
+const SHAPE_SPHERE  = 0;
+const SHAPE_BOX     = 1;
+const SHAPE_CYL     = 2;
+const SHAPE_CAPSULE = 3;
+const SHAPE_TORUS   = 4;
 
 let invView = mat4.create();
 let invProj = mat4.create();
@@ -14,6 +18,57 @@ let invProj = mat4.create();
 //VERY IMPORTANT. Keeps track of all the shapes in the scene.
 const shapes = [];
 //=================================================
+const GIZMO_LENGTH = 1.2;
+
+function defaultParamsForType(type) {
+  switch (type) {
+    case SHAPE_SPHERE:
+      return [1.0, 0, 0, 0]; // radius
+    case SHAPE_BOX:
+      return [0.75, 0.75, 0.75, 0]; // half-extents
+    case SHAPE_CYL:
+      return [0.7, 1.0, 0, 0]; // radius, half-height
+    case SHAPE_CAPSULE:
+      return [0.4, 1.0, 0, 0]; // radius, half-segment length
+    case SHAPE_TORUS:
+      return [1.0, 0.25, 0, 0]; // major radius, minor radius
+    default:
+      return [1.0, 0, 0, 0];
+  }
+}
+
+function addShapeAtOrigin(type) {
+  if (shapes.length >= MAX_SHAPES) {
+    console.warn("Max shape count reached");
+    return;
+  }
+
+  shapes.push({
+    type,
+    pos: [0, 1, 0],
+    params: defaultParamsForType(type),
+  });
+
+  uploadShapes();
+}
+
+function shapeBoundingRadius(shape) {
+  const p = shape.params;
+  switch (shape.type) {
+    case SHAPE_SPHERE:
+      return p[0];
+    case SHAPE_BOX:
+      return Math.hypot(p[0], p[1], p[2]);
+    case SHAPE_CYL:
+      return Math.hypot(p[0], p[1]);
+    case SHAPE_CAPSULE:
+      return p[0] + p[1];
+    case SHAPE_TORUS:
+      return p[0] + p[1];
+    default:
+      return 1.0;
+  }
+}
 
 const canvas = document.getElementById("glcanvas");
 
@@ -21,18 +76,7 @@ const gl = canvas.getContext("webgl2");
 if (!gl) alert("WebGL2 not supported");
 
 function addSphereAtOrigin() {
-  if (shapes.length >= MAX_SHAPES) {
-    console.warn("Max shape count reached");
-    return;
-  }
-
-  shapes.push({
-    type: SHAPE_SPHERE,
-    pos: [0, 1, 0],      // slightly above ground
-    params: [1.0, 0, 0, 0] // radius = 1
-  });
-
-  uploadShapes();
+  addShapeAtOrigin(SHAPE_SPHERE);
 }
 
 function computeMouseRay(mouseX, mouseY) {
@@ -67,7 +111,7 @@ function pickShape(rayOrigin, rayDir) {
 
   for (let i = 0; i < shapes.length; i++) {
     const s = shapes[i];
-    if (s.type !== SHAPE_SPHERE) continue;
+    const radius = shapeBoundingRadius(s);
 
     // Ray–sphere intersection
     const oc = [
@@ -77,7 +121,7 @@ function pickShape(rayOrigin, rayDir) {
     ];
 
     const b = oc[0]*rayDir[0] + oc[1]*rayDir[1] + oc[2]*rayDir[2];
-    const c = oc[0]*oc[0] + oc[1]*oc[1] + oc[2]*oc[2] - s.params[0]*s.params[0];
+    const c = oc[0]*oc[0] + oc[1]*oc[1] + oc[2]*oc[2] - radius*radius;
     const h = b*b - c;
 
     if (h < 0) continue;
@@ -93,15 +137,6 @@ function pickShape(rayOrigin, rayDir) {
 }
 
 let selectedShape = -1;
-
-canvas.addEventListener("mousedown", (e) => {
-  if (e.button !== 0) return;
-
-  const ray = computeMouseRay(e.clientX, e.clientY);
-  selectedShape = pickShape(ray.origin, ray.dir);
-
-  console.log("Selected shape:", selectedShape);
-});
 
 
 //this function uploads the defined sdfs to the scene through the "shapes" list
@@ -125,7 +160,7 @@ function uploadShapes() {
 }
 
 function drawGizmo(pos, activeAxis = -1) {
-  const L = 1.2; // gizmo axis length
+  const L = GIZMO_LENGTH; // gizmo axis length
 
   const verts = new Float32Array([
     // X axis
@@ -297,8 +332,25 @@ const camera = new OrbitCamera();
 const ui = new UIOptions();
 const sdfRenderer = new SDFRenderer(gl);
 
-ui.onAddSphere = () => {
-  addSphereAtOrigin();
+ui.onAddShape = (typeName) => {
+  switch (typeName) {
+    case "box":
+      addShapeAtOrigin(SHAPE_BOX);
+      break;
+    case "cylinder":
+      addShapeAtOrigin(SHAPE_CYL);
+      break;
+    case "capsule":
+      addShapeAtOrigin(SHAPE_CAPSULE);
+      break;
+    case "torus":
+      addShapeAtOrigin(SHAPE_TORUS);
+      break;
+    case "sphere":
+    default:
+      addShapeAtOrigin(SHAPE_SPHERE);
+      break;
+  }
 };
 /* ============================
    Attribute definition
@@ -323,8 +375,87 @@ let dragging = false;
 let lastX = 0, lastY = 0;
 let button = 0;
 let flip_vertical = true;
+const GIZMO_DIRS = [
+  vec3.fromValues(1, 0, 0),
+  vec3.fromValues(0, 1, 0),
+  vec3.fromValues(0, 0, 1),
+];
+
+let gizmoActiveAxis = -1;
+let gizmoDragging = false;
+let gizmoStartT = 0;
+const gizmoStartPos = vec3.create();
+
+function closestPointParamsOnLines(p0, d0, p1, d1) {
+  const r = vec3.sub([], p0, p1);
+  const a = vec3.dot(d0, d0);
+  const e = vec3.dot(d1, d1);
+  const b = vec3.dot(d0, d1);
+  const c = vec3.dot(d0, r);
+  const f = vec3.dot(d1, r);
+  const denom = a * e - b * b;
+  if (Math.abs(denom) < 1e-6) {
+    return { t: 0, dist: Infinity };
+  }
+  const t = (b * f - c * e) / denom;
+  const s = (a * f - b * c) / denom;
+
+  const p = vec3.scaleAndAdd([], p0, d0, t);
+  const q = vec3.scaleAndAdd([], p1, d1, s);
+  const dist = vec3.length(vec3.sub([], p, q));
+  return { t, dist };
+}
+
+function projectRayToAxis(rayOrigin, rayDir, axisOrigin, axisDir) {
+  const { t, dist } = closestPointParamsOnLines(axisOrigin, axisDir, rayOrigin, rayDir);
+  if (!isFinite(dist)) return null;
+  return t;
+}
+
+function pickGizmoAxis(rayOrigin, rayDir, origin) {
+  const threshold = 0.15;
+  let bestAxis = -1;
+  let bestDist = Infinity;
+
+  for (let i = 0; i < GIZMO_DIRS.length; i++) {
+    const dir = GIZMO_DIRS[i];
+    const { t, dist } = closestPointParamsOnLines(origin, dir, rayOrigin, rayDir);
+    if (dist < threshold && t >= 0 && t <= GIZMO_LENGTH) {
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestAxis = i;
+      }
+    }
+  }
+  return bestAxis;
+}
+
+function beginGizmoDrag(axisIndex, rayOrigin, rayDir) {
+  gizmoActiveAxis = axisIndex;
+  gizmoDragging = true;
+  vec3.copy(gizmoStartPos, shapes[selectedShape].pos);
+  const t = projectRayToAxis(rayOrigin, rayDir, gizmoStartPos, GIZMO_DIRS[axisIndex]);
+  gizmoStartT = t ?? 0;
+}
 
 canvas.addEventListener("mousedown", e => {
+  if (e.button === 0) {
+    const ray = computeMouseRay(e.clientX, e.clientY);
+
+    if (selectedShape !== -1) {
+      const axis = pickGizmoAxis(ray.origin, ray.dir, shapes[selectedShape].pos);
+      if (axis !== -1) {
+        beginGizmoDrag(axis, ray.origin, ray.dir);
+        return;
+      }
+    }
+
+    gizmoActiveAxis = -1;
+    selectedShape = pickShape(ray.origin, ray.dir);
+    console.log("Selected shape:", selectedShape);
+    return;
+  }
+
   if (e.button !== 1) {
     dragging = false;
     return;
@@ -337,9 +468,25 @@ canvas.addEventListener("mousedown", e => {
   e.preventDefault(); // avoid default middle-click behavior
 });
 
-window.addEventListener("mouseup", () => dragging = false);
+window.addEventListener("mouseup", () => {
+  dragging = false;
+  gizmoDragging = false;
+  gizmoActiveAxis = -1;
+});
 
 window.addEventListener("mousemove", e => {
+  if (gizmoDragging && selectedShape !== -1 && gizmoActiveAxis !== -1) {
+    const ray = computeMouseRay(e.clientX, e.clientY);
+    const axisDir = GIZMO_DIRS[gizmoActiveAxis];
+    const t = projectRayToAxis(ray.origin, ray.dir, gizmoStartPos, axisDir);
+    if (t !== null) {
+      const delta = t - gizmoStartT;
+      const newPos = vec3.scaleAndAdd([], gizmoStartPos, axisDir, delta);
+      shapes[selectedShape].pos = newPos;
+    }
+    return;
+  }
+
   if (!dragging) return;
 
   const dx = (e.clientX - lastX) / canvas.width;
@@ -457,7 +604,7 @@ function render() {
 
     // draw gizmo
     if (selectedShape !== -1) {
-      drawGizmo(shapes[selectedShape].pos);
+      drawGizmo(shapes[selectedShape].pos, gizmoActiveAxis);
     }
 
   requestAnimationFrame(render);

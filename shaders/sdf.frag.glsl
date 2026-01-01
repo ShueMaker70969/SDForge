@@ -14,6 +14,10 @@ uniform mat4 uInvProj;
 
 #define MAX_SHAPES 16
 #define SHAPE_SPHERE 0
+#define SHAPE_BOX 1
+#define SHAPE_CYL 2
+#define SHAPE_CAPSULE 3
+#define SHAPE_TORUS 4
 
 uniform int  uSelectedShape;
 uniform int  uShapeCount;
@@ -57,6 +61,20 @@ float mapScene(vec3 p) {
 
     if (uShapeType[i] == SHAPE_SPHERE) {
       sd = sdSphere(q, uShapeParams[i].x);
+    }
+    if (uShapeType[i] == SHAPE_BOX) {
+      sd = sdBox(q, uShapeParams[i].xyz);
+    }
+    if (uShapeType[i] == SHAPE_CYL) {
+      sd = sdCylinder(q, uShapeParams[i].x, uShapeParams[i].y);
+    }
+    if (uShapeType[i] == SHAPE_CAPSULE) {
+      vec3 a = vec3(0.0, -uShapeParams[i].y, 0.0);
+      vec3 b = vec3(0.0,  uShapeParams[i].y, 0.0);
+      sd = sdCapsule(q, a, b, uShapeParams[i].x);
+    }
+    if (uShapeType[i] == SHAPE_TORUS) {
+      sd = sdTorus(q, uShapeParams[i].xy);
     }
 
     if (sd < d) {

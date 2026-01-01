@@ -5,7 +5,7 @@ export class UIOptions {
     this.invertY = false;
 
     // callbacks (assigned from outside)
-    this.onAddSphere = null;
+    this.onAddShape = null;
 
     this._buildUI();
   }
@@ -37,21 +37,43 @@ export class UIOptions {
 
     invertLabel.append(invertCheckbox, " Invert Y rotation");
 
-    // ---- Add Sphere button ----
-    const addSphereBtn = document.createElement("button");
-    addSphereBtn.textContent = "Add Sphere";
+    // ---- Primitive picker ----
+    const addRow = document.createElement("div");
+    addRow.style.display = "flex";
+    addRow.style.gap = "0.5rem";
+    addRow.style.alignItems = "center";
 
-    addSphereBtn.addEventListener("click", () => {
-      if (this.onAddSphere) {
-        this.onAddSphere();
+    const shapeSelect = document.createElement("select");
+    const options = [
+      ["sphere", "Sphere"],
+      ["box", "Box"],
+      ["cylinder", "Cylinder"],
+      ["capsule", "Capsule"],
+      ["torus", "Torus"],
+    ];
+    options.forEach(([val, label]) => {
+      const opt = document.createElement("option");
+      opt.value = val;
+      opt.textContent = label;
+      shapeSelect.appendChild(opt);
+    });
+
+    const addShapeBtn = document.createElement("button");
+    addShapeBtn.textContent = "Add";
+
+    addShapeBtn.addEventListener("click", () => {
+      if (this.onAddShape) {
+        this.onAddShape(shapeSelect.value);
       }
     });
+
+    addRow.append(addShapeBtn, shapeSelect);
 
     panel.append(
       darkLabel,
       invertLabel,
       document.createElement("hr"),
-      addSphereBtn
+      addRow
     );
 
     document.body.appendChild(panel);
