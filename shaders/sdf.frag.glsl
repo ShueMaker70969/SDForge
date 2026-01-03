@@ -29,14 +29,17 @@ uniform vec4 uShapeParams[MAX_SHAPES];
 float sdSphere(vec3 p, float r) {
   return length(p) - r;
 }
-float sdBox(vec3 p, vec3 b) {
-  // b = half-size of the box
-  vec3 d = abs(p) - b;
-  return length(max(d, 0.0)) + min(max(d.x, max(d.y, d.z)), 0.0);
+
+float sdBox(vec3 p, vec3 b, float r) { 
+  // b = half-size of the box, r = rounding radius
+  vec3 q = abs(p) - b + r;
+  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - r;
 }
-float sdCylinder(vec3 p, float r, float h) {
-    vec2 d = abs(vec2(length(p.xz), p.y)) - vec2(r, h);
-    return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
+
+float sdCylinder(vec3 p, float r, float h, float rounding) {
+    // r = radius, h = half-height, rounding = rounding radius for top/bottom edges
+    vec2 d = abs(vec2(length(p.xz), p.y)) - vec2(r - rounding, h - rounding);
+    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - rounding;
 }
 float sdCapsule(vec3 p, vec3 a, vec3 b, float r) {
     vec3 pa = p - a, ba = b - a;
@@ -63,10 +66,12 @@ float mapScene(vec3 p) {
       sd = sdSphere(q, uShapeParams[i].x);
     }
     if (uShapeType[i] == SHAPE_BOX) {
-      sd = sdBox(q, uShapeParams[i].xyz);
+      sd = sdBox(q, uShapeParams[i].xyz, uShapeParams[i].w); 
+      // .w is the rounding value, pass it as 3rd arguement 
     }
     if (uShapeType[i] == SHAPE_CYL) {
-      sd = sdCylinder(q, uShapeParams[i].x, uShapeParams[i].y);
+      sd = sdCylinder(q, uShapeParams[i].x, uShapeParams[i].y, uShapeParams[i].z);
+      // .x = radius, .y = half-height, .z = rounding
     }
     if (uShapeType[i] == SHAPE_CAPSULE) {
       vec3 a = vec3(0.0, -uShapeParams[i].y, 0.0);

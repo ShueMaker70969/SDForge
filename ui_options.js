@@ -6,6 +6,7 @@ export class UIOptions {
 
     // callbacks (assigned from outside)
     this.onAddShape = null;
+    this.onUpdateBoxRounding = null; //box rounding updates
 
     this._buildUI();
   }
@@ -69,13 +70,68 @@ export class UIOptions {
 
     addRow.append(addShapeBtn, shapeSelect);
 
+    // ----  Rounding Control ----
+    const roundingContainer = document.createElement("div");
+    roundingContainer.style.display = "none"; // Hidden by default, shown when shape is selected
+    roundingContainer.style.marginTop = "10px";
+
+    const roundingLabel = document.createElement("label");
+    roundingLabel.textContent = "Rounding: ";
+    roundingLabel.style.display = "block";
+    roundingLabel.style.marginBottom = "5px";
+
+    const roundingInput = document.createElement("input");
+    roundingInput.type = "range";
+    roundingInput.min = "0";
+    roundingInput.max = "0.5";
+    roundingInput.step = "0.01";
+    roundingInput.value = "0";
+    roundingInput.style.width = "150px";
+
+    const roundingValue = document.createElement("span");
+    roundingValue.textContent = "0.00";
+    roundingValue.style.marginLeft = "10px";
+
+    roundingInput.addEventListener("input", (e) => {
+      const rounding = parseFloat(e.target.value);
+      roundingValue.textContent = rounding.toFixed(2);
+      
+      // Call callback to update shape parameter
+      if (this.onUpdateBoxRounding) {
+        this.onUpdateBoxRounding(rounding);
+      }
+    });
+
+    roundingLabel.appendChild(roundingInput);
+    roundingLabel.appendChild(roundingValue);
+    roundingContainer.appendChild(roundingLabel);
+
+    // Store references for external updates
+    this.roundingContainer = roundingContainer;
+    this.roundingInput = roundingInput;
+    this.roundingValue = roundingValue;
+
     panel.append(
       darkLabel,
       invertLabel,
       document.createElement("hr"),
-      addRow
+      addRow,
+      roundingContainer
     );
 
     document.body.appendChild(panel);
+  }
+
+  // Method to update rounding control visibility and value
+  updateRoundingControl(selectedShape, shape) {
+    if (selectedShape !== -1 && shape && (shape.type === 1 || shape.type === 2)) { // SHAPE_BOX = 1, SHAPE_CYL = 2
+      this.roundingContainer.style.display = "block";
+      // Box uses params[3], Cylinder uses params[2]
+      const rounding = shape.type === 1 ? (shape.params[3] || 0) : (shape.params[2] || 0);
+      this.roundingInput.value = rounding;
+      this.roundingValue.textContent = rounding.toFixed(2);
+    } else {
+      this.roundingContainer.style.display = "none";
+    }
   }
 }

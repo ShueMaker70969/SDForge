@@ -11,6 +11,8 @@ const SHAPE_CYL     = 2;
 const SHAPE_CAPSULE = 3;
 const SHAPE_TORUS   = 4;
 
+//what other shapes could be added? triangle, polygon, cone...
+
 let invView = mat4.create();
 let invProj = mat4.create();
 
@@ -25,9 +27,9 @@ function defaultParamsForType(type) {
     case SHAPE_SPHERE:
       return [1.0, 0, 0, 0]; // radius
     case SHAPE_BOX:
-      return [0.75, 0.75, 0.75, 0]; // half-extents
+      return [0.75, 0.75, 0.75, 0.0]; // half-extents
     case SHAPE_CYL:
-      return [0.7, 1.0, 0, 0]; // radius, half-height
+      return [0.7, 1.0, 0, 0.0]; // radius, half-height
     case SHAPE_CAPSULE:
       return [0.4, 1.0, 0, 0]; // radius, half-segment length
     case SHAPE_TORUS:
@@ -54,15 +56,19 @@ function addShapeAtOrigin(type) {
 
 function shapeBoundingRadius(shape) {
   const p = shape.params;
+  const rounding = p[3] || 0; //if p[3] is missing use 0
+  
   switch (shape.type) {
     case SHAPE_SPHERE:
       return p[0];
     case SHAPE_BOX:
-      return Math.hypot(p[0], p[1], p[2]);
+      const boxRounding = p[3] || 0;
+      return Math.hypot(p[0], p[1], p[2]) + boxRounding;
     case SHAPE_CYL:
-      return Math.hypot(p[0], p[1]);
+      const cylRounding = p[2] || 0;
+      return Math.hypot(p[0], p[1]) + cylRounding; 
     case SHAPE_CAPSULE:
-      return p[0] + p[1];
+      return p[0] + p[1]; //rounding not needed for capsule? 
     case SHAPE_TORUS:
       return p[0] + p[1];
     default:
@@ -352,6 +358,19 @@ ui.onAddShape = (typeName) => {
       break;
   }
 };
+
+// Callback for box rounding updates
+ui.onUpdateBoxRounding = (rounding) => {
+  if (selectedShape !== -1 && shapes[selectedShape]) {
+    const shape = shapes[selectedShape];
+    if (shape.type === SHAPE_BOX) {
+      shape.params[3] = rounding; // Box uses params[3]
+    } else if (shape.type === SHAPE_CYL) {
+      shape.params[2] = rounding; // Cylinder uses params[2]
+    }
+    uploadShapes(); // Upload to GPU after parameter change
+  }
+};
 /* ============================
    Attribute definition
 ============================ */
@@ -453,6 +472,12 @@ canvas.addEventListener("mousedown", e => {
     gizmoActiveAxis = -1;
     selectedShape = pickShape(ray.origin, ray.dir);
     console.log("Selected shape:", selectedShape);
+    // Update rounding control value
+    if (selectedShape !== -1) {
+      ui.updateRoundingControl(selectedShape, shapes[selectedShape]);
+    } else {
+      ui.updateRoundingControl(-1, null);
+    }
     return;
   }
 
