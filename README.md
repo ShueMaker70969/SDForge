@@ -1,5 +1,7 @@
-![SDForge Logo](assets/SDForge.PNG)
-#SDForge
+![SDForge Logo](assets/sdforge.PNG)
+
+# SDForge
+
 Welcome to **SDForge**!
 
 SDForge is an experimental, browser-based 3D modeling environment built around Signed Distance Functions (SDFs).
