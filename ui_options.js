@@ -94,11 +94,21 @@ export class UIOptions {
 
     roundingInput.addEventListener("input", (e) => {
       const rounding = parseFloat(e.target.value);
-      roundingValue.textContent = rounding.toFixed(2);
+     
+      //static 
+      //roundingValue.textContent = rounding.toFixed(2);
+
+      const maxRounding = parseFloat(this.roundingInput.max);
+      // Clamp to max value (range input should handle this, but add safeguard)
+      const clampedRounding = Math.min(rounding, maxRounding);
+      roundingValue.textContent = clampedRounding.toFixed(2);
       
       // Call callback to update shape parameter
       if (this.onUpdateBoxRounding) {
-        this.onUpdateBoxRounding(rounding);
+        //static 
+        //this.onUpdateBoxRounding(rounding);
+
+        this.onUpdateBoxRounding(clampedRounding);
       }
     });
 
@@ -126,10 +136,37 @@ export class UIOptions {
   updateRoundingControl(selectedShape, shape) {
     if (selectedShape !== -1 && shape && (shape.type === 1 || shape.type === 2)) { // SHAPE_BOX = 1, SHAPE_CYL = 2
       this.roundingContainer.style.display = "block";
+      
+      // Calculate max rounding based on shape dimensions (dynamic, start here if needed)
+      let maxRounding = 0.5; // default fallback
+      if (shape.type === 1) { // SHAPE_BOX
+        // Max rounding = smallest half-extent (to prevent rounding from exceeding dimensions)
+        maxRounding = Math.min(shape.params[0], shape.params[1], shape.params[2]);
+      } else if (shape.type === 2) { // SHAPE_CYL
+        // Max rounding = smaller of radius or half-height
+        maxRounding = Math.min(shape.params[0], shape.params[1]);
+      }
+      
+      // Set max value (with small epsilon to prevent edge cases)
+      this.roundingInput.max = (maxRounding * 0.99).toFixed(2);
+      
       // Box uses params[3], Cylinder uses params[2]
       const rounding = shape.type === 1 ? (shape.params[3] || 0) : (shape.params[2] || 0);
-      this.roundingInput.value = rounding;
-      this.roundingValue.textContent = rounding.toFixed(2);
+      //static 
+      //this.roundingInput.value = rounding;
+      //this.roundingValue.textContent = rounding.toFixed(2);
+      
+      // Clamp rounding value to max if it exceeds
+      const clampedRounding = Math.min(rounding, maxRounding);
+      if (clampedRounding !== rounding) {
+        if (this.onUpdateBoxRounding) {
+          this.onUpdateBoxRounding(clampedRounding);
+        }
+      }
+      
+      this.roundingInput.value = clampedRounding;
+      this.roundingValue.textContent = clampedRounding.toFixed(2);
+      //dynamic (end, delete if needed)
     } else {
       this.roundingContainer.style.display = "none";
     }
