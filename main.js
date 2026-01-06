@@ -499,6 +499,9 @@ let gizmoActiveAxis = -1;
 let gizmoDragging = false;
 let gizmoDragType = null;
 let gizmoStartT = 0;
+
+let gizmoStartScale = 1.0;
+
 const gizmoStartPos = vec3.create();
 const rotationAxis = vec3.create();
 const rotationStartVec = vec3.create();
@@ -643,6 +646,8 @@ function beginScaleDrag(axisIndex, rayOrigin, rayDir) {
   const t = projectRayToAxis(rayOrigin, rayDir, gizmoStartPos, GIZMO_DIRS[axisIndex]);
   gizmoStartT = t ?? 0;
 
+  gizmoStartScale = shapes[selectedShape].scale[axisIndex];
+
   // optional: store starting scale if you want stable scaling math
   // vec3.copy(scaleStart, shapes[selectedShape].scale);
 }
@@ -767,17 +772,12 @@ window.addEventListener("mousemove", e => {
       if (t !== null) {
         const delta = t - gizmoStartT;
 
-        // Exponential feels best for interactive scaling:
-        const factor = Math.exp(delta * 0.05);
+        let speed = 0.3;
+        const factor = Math.exp(delta * speed);
 
-        const s = shapes[selectedShape].scale;
-        s[gizmoActiveAxis] *= factor;
-
-        // clamp to avoid flip / collapse
-        s[gizmoActiveAxis] = Math.max(0.05, Math.min(20.0, s[gizmoActiveAxis]));
+        shapes[selectedShape].scale[gizmoActiveAxis] =Math.max(0.05, gizmoStartScale * factor);
       }
     }
-
     return;
   }
 
