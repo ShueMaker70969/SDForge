@@ -7,6 +7,7 @@ export class UIOptions {
     // callbacks (assigned from outside)
     this.onAddShape = null;
     this.onUpdateBoxRounding = null; //box rounding updates
+    this.onDeleteShape = null;
 
     this._buildUI();
   }
@@ -68,7 +69,18 @@ export class UIOptions {
       }
     });
 
-    addRow.append(addShapeBtn, shapeSelect);
+    const deleteShapeBtn = document.createElement("button");
+    deleteShapeBtn.textContent = "Delete";
+    deleteShapeBtn.disabled = true; // disabled by default
+
+    deleteShapeBtn.addEventListener("click", () => {
+      if (this.onDeleteShape) {
+        this.onDeleteShape();
+      }
+    });
+    addRow.append(addShapeBtn, shapeSelect, deleteShapeBtn);
+
+
 
     // ----  Rounding Control ----
     const roundingContainer = document.createElement("div");
@@ -120,6 +132,8 @@ export class UIOptions {
     this.roundingContainer = roundingContainer;
     this.roundingInput = roundingInput;
     this.roundingValue = roundingValue;
+    
+    this.deleteShapeBtn = deleteShapeBtn;
 
     panel.append(
       darkLabel,
@@ -134,6 +148,11 @@ export class UIOptions {
 
   // Method to update rounding control visibility and value
   updateRoundingControl(selectedShape, shape) {
+    // Enable delete button only when a shape is selected!
+    //NOTE!!! This is here, as this is called whenever selection changes. Might have rename updateRoundingControl later to something more generic.
+    if (this.deleteShapeBtn) {
+      this.deleteShapeBtn.disabled = (selectedShape === -1);
+    }
     if (selectedShape !== -1 && shape && (shape.type === 1 || shape.type === 2)) { // SHAPE_BOX = 1, SHAPE_CYL = 2
       this.roundingContainer.style.display = "block";
       

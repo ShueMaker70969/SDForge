@@ -23,6 +23,7 @@ const shapes = [];
 const GIZMO_LENGTH = 1.2;
 
 function defaultParamsForType(type) {
+  //here, each parameter array has certain number of elements, and may mean different things depending on the shape. Cylinder uses params[2] for rounding, box uses params[3] for rounding, etc. Gotta fix this later, since it is messy and likely to cause bugs later. 
   switch (type) {
     case SHAPE_SPHERE:
       return [1.0, 0, 0, 0]; // radius
@@ -212,8 +213,6 @@ function drawGizmo(pos, activeAxis = -1) {
   gl.enable(gl.DEPTH_TEST);
 }
 
-
-
 function resize() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
@@ -338,6 +337,10 @@ const camera = new OrbitCamera();
 const ui = new UIOptions();
 const sdfRenderer = new SDFRenderer(gl);
 
+ui.onDeleteShape = () => {
+  deleteSelectedShape();
+};
+
 ui.onAddShape = (typeName) => {
   switch (typeName) {
     case "box":
@@ -404,6 +407,25 @@ let gizmoActiveAxis = -1;
 let gizmoDragging = false;
 let gizmoStartT = 0;
 const gizmoStartPos = vec3.create();
+
+function deleteSelectedShape() {
+  if (selectedShape === -1) return;
+
+  // Remove shape from the scene
+  shapes.splice(selectedShape, 1);
+
+  // Clear selection (indices shift after splice)
+  selectedShape = -1;
+  gizmoActiveAxis = -1;
+  gizmoDragging = false;
+
+  // Push updated shape list to renderer
+  uploadShapes();
+
+  // Update UI (hide rounding, disable delete, etc.)
+  ui.updateRoundingControl(-1, null);
+}
+
 
 function closestPointParamsOnLines(p0, d0, p1, d1) {
   const r = vec3.sub([], p0, p1);
@@ -546,11 +568,12 @@ canvas.addEventListener("contextmenu", e => e.preventDefault());
 const uView = gl.getUniformLocation(program, "uView");
 const uProj = gl.getUniformLocation(program, "uProj");
 
+const shapePosData   = new Float32Array(MAX_SHAPES * 3);
+const shapeTypeData  = new Int32Array(MAX_SHAPES);
+const shapeParamData = new Float32Array(MAX_SHAPES * 4);
+
 function render() {
     // ---- build shape uniform data ----
-    const shapePosData   = new Float32Array(MAX_SHAPES * 3);
-    const shapeTypeData  = new Int32Array(MAX_SHAPES);
-    const shapeParamData = new Float32Array(MAX_SHAPES * 4);
 
     for (let i = 0; i < shapes.length; i++) {
       const s = shapes[i];
