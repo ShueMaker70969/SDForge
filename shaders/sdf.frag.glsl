@@ -97,6 +97,12 @@ float mapScene(vec3 p) {
       sd = sdTorus(local, uShapeParams[i].xy);
     }
 
+    float scaleMin = min(
+      uShapeScale[i].x,
+      min(uShapeScale[i].y, uShapeScale[i].z)
+    );
+    sd *= scaleMin;
+
     if (sd < d) {
       d = sd;
       gHitShape = i;
