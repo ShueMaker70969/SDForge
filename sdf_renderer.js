@@ -68,10 +68,11 @@ export class SDFRenderer {
     this.uShapeType  = gl.getUniformLocation(this.program, "uShapeType");
     this.uShapeParams= gl.getUniformLocation(this.program, "uShapeParams");
     this.uShapeRot   = gl.getUniformLocation(this.program, "uShapeRot");
+    this.uShapeScale = gl.getUniformLocation(this.program, "uShapeScale");
 
     this.uSelectedShape = gl.getUniformLocation(this.program, "uSelectedShape");
   }
-  setShapes({ count, positions, rotations, types, params }) {
+  setShapes({ count, positions, rotations, types, params, scales }) {
     const gl = this.gl;
     gl.useProgram(this.program);
 
@@ -106,6 +107,7 @@ export class SDFRenderer {
     gl.uniform4fv(this.uShapeRot, shapeData.rotations);
     gl.uniform1iv(this.uShapeType, shapeData.types);
     gl.uniform4fv(this.uShapeParams, shapeData.params);
+    gl.uniform3fv(this.uShapeScale, shapeData.scales);
 
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 

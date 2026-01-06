@@ -66,6 +66,7 @@ export class UIOptions {
     [
       ["translate", "Translate"],
       ["rotate", "Rotate"],
+      ["scale", "Scale"],
     ].forEach(([val, text]) => {
       const opt = document.createElement("option");
       opt.value = val;

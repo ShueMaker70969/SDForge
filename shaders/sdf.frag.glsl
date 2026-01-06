@@ -28,6 +28,7 @@ uniform vec3 uShapePos[MAX_SHAPES];
 uniform vec4 uShapeRot[MAX_SHAPES];
 uniform int  uShapeType[MAX_SHAPES];
 uniform vec4 uShapeParams[MAX_SHAPES];
+uniform vec3 uShapeScale[MAX_SHAPES];
 
 // ---------------- SDF ----------------
 float sdSphere(vec3 p, float r) {
@@ -72,6 +73,8 @@ float mapScene(vec3 p) {
     vec4 rot = uShapeRot[i];
     vec4 invRot = vec4(-rot.xyz, rot.w);
     vec3 local = rotateVecByQuat(q, invRot);
+    local /= uShapeScale[i];
+
     float sd = 1e9;
 
     if (uShapeType[i] == SHAPE_SPHERE) {

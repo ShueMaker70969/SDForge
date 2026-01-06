@@ -9,7 +9,10 @@ const lightBaseDir = vec3.normalize([], [0.5, 1.0, 0.3]);
 let lightAngle = 0.0; // radians
 const lightDir = vec3.create();
 
+//Max number of shapes that can exist in the scene
 const MAX_SHAPES = 16;
+
+//THESE CONSTANTS ARE IMPORTANT. They define the shape types used in the SDF system.
 const SHAPE_SPHERE  = 0;
 const SHAPE_BOX     = 1;
 const SHAPE_CYL     = 2;
@@ -67,6 +70,7 @@ function addShapeAtOrigin(type) {
     pos: [0, 1, 0],
     params: defaultParamsForType(type),
     rotation: quat.create(),
+    scale: [1, 1, 1],
   });
 
   uploadShapes();
@@ -603,6 +607,9 @@ function pickRotationAxis(rayOrigin, rayDir, origin) {
   };
 }
 
+
+// ==========================================
+// FROM HERE TO NEXT CLOSE === LINE, IT IS AFFINE TRANSFORMATION DRAG HANDLING
 function beginTranslationDrag(axisIndex, rayOrigin, rayDir) {
   gizmoActiveAxis = axisIndex;
   gizmoDragging = true;
@@ -624,6 +631,24 @@ function beginRotationDrag(axisIndex, hitPoint) {
   vec3.copy(rotationAxis, axisDir);
   quat.copy(rotationStartQuat, shape.rotation);
 }
+
+function beginScaleDrag(axisIndex, rayOrigin, rayDir) {
+  gizmoActiveAxis = axisIndex;
+  gizmoDragging = true;
+  gizmoDragType = "scale";
+
+  // scaling is along the axis line, same anchor as translate:
+  vec3.copy(gizmoStartPos, shapes[selectedShape].pos);
+
+  const t = projectRayToAxis(rayOrigin, rayDir, gizmoStartPos, GIZMO_DIRS[axisIndex]);
+  gizmoStartT = t ?? 0;
+
+  // optional: store starting scale if you want stable scaling math
+  // vec3.copy(scaleStart, shapes[selectedShape].scale);
+}
+
+// END OF AFFIE TRANSFORMATION DRAG HANDLING
+// ==========================================
 
 function projectPointToPlaneVector(point, origin, axisDir, out) {
   vec3.sub(out, point, origin);
@@ -673,10 +698,16 @@ canvas.addEventListener("mousedown", e => {
           beginRotationDrag(pick.axis, pick.hitPoint);
           return;
         }
-      } else {
+      } else if (gizmoMode === "translate") {
         const axis = pickTranslationAxis(ray.origin, ray.dir, shapePos);
         if (axis !== -1) {
           beginTranslationDrag(axis, ray.origin, ray.dir);
+          return;
+        }
+      } else if (gizmoMode === "scale") {
+        const axis = pickTranslationAxis(ray.origin, ray.dir, shapePos);
+        if (axis !== -1) {
+          beginScaleDrag(axis, ray.origin, ray.dir); // <- new function
           return;
         }
       }
@@ -730,7 +761,23 @@ window.addEventListener("mousemove", e => {
       }
     } else if (gizmoDragType === "rotate") {
       handleRotationDrag(ray.origin, ray.dir);
+    } else if (gizmoDragType === "scale") {
+      const axisDir = GIZMO_DIRS[gizmoActiveAxis];
+      const t = projectRayToAxis(ray.origin, ray.dir, gizmoStartPos, axisDir);
+      if (t !== null) {
+        const delta = t - gizmoStartT;
+
+        // Exponential feels best for interactive scaling:
+        const factor = Math.exp(delta * 0.05);
+
+        const s = shapes[selectedShape].scale;
+        s[gizmoActiveAxis] *= factor;
+
+        // clamp to avoid flip / collapse
+        s[gizmoActiveAxis] = Math.max(0.05, Math.min(20.0, s[gizmoActiveAxis]));
+      }
     }
+
     return;
   }
 
@@ -772,6 +819,7 @@ const shapePosData   = new Float32Array(MAX_SHAPES * 3);
 const shapeTypeData  = new Int32Array(MAX_SHAPES);
 const shapeParamData = new Float32Array(MAX_SHAPES * 4);
 const shapeRotData   = new Float32Array(MAX_SHAPES * 4);
+const shapeScaleData = new Float32Array(MAX_SHAPES * 3);
 
 function render() {
     // ---- build shape uniform data ----
@@ -787,6 +835,7 @@ function render() {
       shapeTypeData[i] = s.type;
       shapeParamData.set(s.params, i * 4);
       shapeRotData.set(s.rotation, i * 4);
+      shapeScaleData.set(s.scale, i * 3);
     }
 
     if (ui.darkMode) {
@@ -850,6 +899,7 @@ function render() {
         rotations: shapeRotData,
         types: shapeTypeData,
         params: shapeParamData,
+        scales: shapeScaleData,
       },
       selectedShape,
       lightDir,
