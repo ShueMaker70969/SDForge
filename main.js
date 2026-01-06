@@ -1,8 +1,13 @@
-import { mat4, vec3, vec4 } 
+import { mat4, vec3, vec4, quat } 
   from "https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/esm/index.js";
 import { OrbitCamera } from "./camera.js";
 import { UIOptions } from "./ui_options.js";
 import { SDFRenderer } from "./sdf_renderer.js";
+
+//These controls the light direction in the scene
+const lightBaseDir = vec3.normalize([], [0.5, 1.0, 0.3]);
+let lightAngle = 0.0; // radians
+const lightDir = vec3.create();
 
 const MAX_SHAPES = 16;
 const SHAPE_SPHERE  = 0;
@@ -21,6 +26,17 @@ let invProj = mat4.create();
 const shapes = [];
 //=================================================
 const GIZMO_LENGTH = 1.2;
+const GIZMO_ROTATION_SEGMENTS = 64;
+const GIZMO_ROTATION_RADIUS = GIZMO_LENGTH;
+const GIZMO_ROTATION_PICK_WIDTH = 0.12;
+const GIZMO_HIGHLIGHT_COLOR = [1.0, 1.0, 0.0];
+const GIZMO_AXIS_COLORS = [
+  [1, 0, 0], // X
+  [0, 0, 1], // Y
+  [0, 1, 0], // Z
+];
+
+let gizmoMode = "translate";
 
 function defaultParamsForType(type) {
   //here, each parameter array has certain number of elements, and may mean different things depending on the shape. Cylinder uses params[2] for rounding, box uses params[3] for rounding, etc. Gotta fix this later, since it is messy and likely to cause bugs later. 
@@ -50,6 +66,7 @@ function addShapeAtOrigin(type) {
     type,
     pos: [0, 1, 0],
     params: defaultParamsForType(type),
+    rotation: quat.create(),
   });
 
   uploadShapes();
@@ -151,11 +168,13 @@ function uploadShapes() {
   const posData   = new Float32Array(MAX_SHAPES * 3);
   const typeData  = new Int32Array(MAX_SHAPES);
   const paramData = new Float32Array(MAX_SHAPES * 4);
+  const rotData   = new Float32Array(MAX_SHAPES * 4);
 
   shapes.forEach((s, i) => {
     posData.set(s.pos, i * 3);
     typeData[i] = s.type;
     paramData.set(s.params, i * 4);
+    rotData.set(s.rotation, i * 4);
   });
 
   sdfRenderer.setShapes({
@@ -163,10 +182,19 @@ function uploadShapes() {
     positions: posData,
     types: typeData,
     params: paramData,
+    rotations: rotData,
   });
 }
 
 function drawGizmo(pos, activeAxis = -1) {
+  if (gizmoMode === "rotate") {
+    drawRotationGizmo(pos, activeAxis);
+  } else {
+    drawTranslationGizmo(pos, activeAxis);
+  }
+}
+
+function drawTranslationGizmo(pos, activeAxis = -1) {
   const L = GIZMO_LENGTH; // gizmo axis length
 
   const verts = new Float32Array([
@@ -183,16 +211,15 @@ function drawGizmo(pos, activeAxis = -1) {
     pos[0], pos[1], pos[2] + L,
   ]);
 
-  const highlight = [1.0, 1.0, 0.0]; // yellow
   const colors = new Float32Array([
-    ...(activeAxis === 0 ? highlight : [1,0,0]),
-    ...(activeAxis === 0 ? highlight : [1,0,0]),
+    ...(activeAxis === 0 ? GIZMO_HIGHLIGHT_COLOR : GIZMO_AXIS_COLORS[0]),
+    ...(activeAxis === 0 ? GIZMO_HIGHLIGHT_COLOR : GIZMO_AXIS_COLORS[0]),
 
-    ...(activeAxis === 1 ? highlight : [0,0,1]),
-    ...(activeAxis === 1 ? highlight : [0,0,1]),
+    ...(activeAxis === 1 ? GIZMO_HIGHLIGHT_COLOR : GIZMO_AXIS_COLORS[1]),
+    ...(activeAxis === 1 ? GIZMO_HIGHLIGHT_COLOR : GIZMO_AXIS_COLORS[1]),
 
-    ...(activeAxis === 2 ? highlight : [0,1,0]),
-    ...(activeAxis === 2 ? highlight : [0,1,0]),
+    ...(activeAxis === 2 ? GIZMO_HIGHLIGHT_COLOR : GIZMO_AXIS_COLORS[2]),
+    ...(activeAxis === 2 ? GIZMO_HIGHLIGHT_COLOR : GIZMO_AXIS_COLORS[2]),
   ]);
 
   // OPTIONAL: always-visible gizmo
@@ -209,6 +236,47 @@ function drawGizmo(pos, activeAxis = -1) {
   gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
 
   gl.drawArrays(gl.LINES, 0, 6);
+
+  gl.enable(gl.DEPTH_TEST);
+}
+
+function drawRotationGizmo(pos, activeAxis = -1) {
+  gl.disable(gl.DEPTH_TEST);
+
+  const circleVerts = new Float32Array(GIZMO_ROTATION_SEGMENTS * 3);
+  const circleColors = new Float32Array(GIZMO_ROTATION_SEGMENTS * 3);
+
+  for (let axisIndex = 0; axisIndex < GIZMO_DIRS.length; axisIndex++) {
+    const axis = GIZMO_DIRS[axisIndex];
+    const { tangent, bitangent } = buildCircleBasis(axis);
+    const color = activeAxis === axisIndex ? GIZMO_HIGHLIGHT_COLOR : GIZMO_AXIS_COLORS[axisIndex];
+    const offset = vec3.create();
+
+    for (let i = 0; i < GIZMO_ROTATION_SEGMENTS; i++) {
+      const t = (i / GIZMO_ROTATION_SEGMENTS) * Math.PI * 2;
+      const cosT = Math.cos(t);
+      const sinT = Math.sin(t);
+      vec3.scale(offset, tangent, cosT * GIZMO_ROTATION_RADIUS);
+      vec3.scaleAndAdd(offset, offset, bitangent, sinT * GIZMO_ROTATION_RADIUS);
+
+      const idx = i * 3;
+      circleVerts[idx    ] = pos[0] + offset[0];
+      circleVerts[idx + 1] = pos[1] + offset[1];
+      circleVerts[idx + 2] = pos[2] + offset[2];
+
+      circleColors.set(color, idx);
+    }
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, gizmoPosBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, circleVerts, gl.DYNAMIC_DRAW);
+    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, gizmoColorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, circleColors, gl.DYNAMIC_DRAW);
+    gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
+
+    gl.drawArrays(gl.LINE_LOOP, 0, GIZMO_ROTATION_SEGMENTS);
+  }
 
   gl.enable(gl.DEPTH_TEST);
 }
@@ -335,7 +403,20 @@ const gridVertexCount = positions.length / 3;
 
 const camera = new OrbitCamera();
 const ui = new UIOptions();
+gizmoMode = ui.gizmoMode;
 const sdfRenderer = new SDFRenderer(gl);
+
+// UI Callbacks for the light rotation.
+ui.onLightRotate = (deg) => {
+  lightAngle = deg * Math.PI / 180.0;
+};
+
+ui.onGizmoModeChange = (mode) => {
+  gizmoMode = mode;
+  gizmoDragging = false;
+  gizmoActiveAxis = -1;
+  gizmoDragType = null;
+};
 
 ui.onDeleteShape = () => {
   deleteSelectedShape();
@@ -403,10 +484,23 @@ const GIZMO_DIRS = [
   vec3.fromValues(0, 0, 1),
 ];
 
+function buildCircleBasis(axis) {
+  const helper = Math.abs(axis[1]) < 0.99 ? vec3.fromValues(0, 1, 0) : vec3.fromValues(1, 0, 0);
+  const tangent = vec3.normalize(vec3.create(), vec3.cross(vec3.create(), axis, helper));
+  const bitangent = vec3.normalize(vec3.create(), vec3.cross(vec3.create(), tangent, axis));
+  return { tangent, bitangent };
+}
+
 let gizmoActiveAxis = -1;
 let gizmoDragging = false;
+let gizmoDragType = null;
 let gizmoStartT = 0;
 const gizmoStartPos = vec3.create();
+const rotationAxis = vec3.create();
+const rotationStartVec = vec3.create();
+const rotationCurrentVec = vec3.create();
+const rotationStartQuat = quat.create();
+const rotationDeltaQuat = quat.create();
 
 function deleteSelectedShape() {
   if (selectedShape === -1) return;
@@ -418,6 +512,7 @@ function deleteSelectedShape() {
   selectedShape = -1;
   gizmoActiveAxis = -1;
   gizmoDragging = false;
+  gizmoDragType = null;
 
   // Push updated shape list to renderer
   uploadShapes();
@@ -453,7 +548,15 @@ function projectRayToAxis(rayOrigin, rayDir, axisOrigin, axisDir) {
   return t;
 }
 
-function pickGizmoAxis(rayOrigin, rayDir, origin) {
+function intersectRayPlane(rayOrigin, rayDir, planePoint, planeNormal) {
+  const denom = vec3.dot(planeNormal, rayDir);
+  if (Math.abs(denom) < 1e-6) return null;
+  const t = vec3.dot(vec3.sub([], planePoint, rayOrigin), planeNormal) / denom;
+  if (t < 0) return null;
+  return vec3.scaleAndAdd([], rayOrigin, rayDir, t);
+}
+
+function pickTranslationAxis(rayOrigin, rayDir, origin) {
   const threshold = 0.15;
   let bestAxis = -1;
   let bestDist = Infinity;
@@ -471,12 +574,91 @@ function pickGizmoAxis(rayOrigin, rayDir, origin) {
   return bestAxis;
 }
 
-function beginGizmoDrag(axisIndex, rayOrigin, rayDir) {
+function pickRotationAxis(rayOrigin, rayDir, origin) {
+  let bestAxis = -1;
+  let bestDiff = GIZMO_ROTATION_PICK_WIDTH;
+  let bestPoint = null;
+
+  for (let i = 0; i < GIZMO_DIRS.length; i++) {
+    const axisDir = GIZMO_DIRS[i];
+    const hit = intersectRayPlane(rayOrigin, rayDir, origin, axisDir);
+    if (!hit) continue;
+
+    const offset = vec3.sub([], hit, origin);
+    const axisComponent = vec3.dot(offset, axisDir);
+    vec3.scaleAndAdd(offset, offset, axisDir, -axisComponent);
+    const dist = vec3.length(offset);
+    const diff = Math.abs(dist - GIZMO_ROTATION_RADIUS);
+
+    if (diff <= GIZMO_ROTATION_PICK_WIDTH && diff < bestDiff) {
+      bestDiff = diff;
+      bestAxis = i;
+      bestPoint = hit;
+    }
+  }
+
+  return {
+    axis: bestAxis,
+    hitPoint: bestPoint,
+  };
+}
+
+function beginTranslationDrag(axisIndex, rayOrigin, rayDir) {
   gizmoActiveAxis = axisIndex;
   gizmoDragging = true;
+  gizmoDragType = "translate";
   vec3.copy(gizmoStartPos, shapes[selectedShape].pos);
   const t = projectRayToAxis(rayOrigin, rayDir, gizmoStartPos, GIZMO_DIRS[axisIndex]);
   gizmoStartT = t ?? 0;
+}
+
+function beginRotationDrag(axisIndex, hitPoint) {
+  const shape = shapes[selectedShape];
+  const axisDir = GIZMO_DIRS[axisIndex];
+  if (!projectPointToPlaneVector(hitPoint, shape.pos, axisDir, rotationStartVec)) {
+    return;
+  }
+  gizmoActiveAxis = axisIndex;
+  gizmoDragging = true;
+  gizmoDragType = "rotate";
+  vec3.copy(rotationAxis, axisDir);
+  quat.copy(rotationStartQuat, shape.rotation);
+}
+
+function projectPointToPlaneVector(point, origin, axisDir, out) {
+  vec3.sub(out, point, origin);
+  const axisComponent = vec3.dot(out, axisDir);
+  vec3.scaleAndAdd(out, out, axisDir, -axisComponent);
+  const len = vec3.length(out);
+  if (len < 1e-4) return false;
+  vec3.scale(out, out, 1 / len);
+  return true;
+}
+
+function signedAngleBetween(a, b, axisDir) {
+  const crossVec = vec3.cross([], a, b);
+  const sinTerm = vec3.dot(crossVec, axisDir);
+  const cosTerm = vec3.dot(a, b);
+  return Math.atan2(sinTerm, cosTerm);
+}
+
+function handleRotationDrag(rayOrigin, rayDir) {
+  const shape = shapes[selectedShape];
+  const hit = intersectRayPlane(rayOrigin, rayDir, shape.pos, rotationAxis);
+  if (!hit) return;
+  if (!projectPointToPlaneVector(hit, shape.pos, rotationAxis, rotationCurrentVec)) {
+    return;
+  }
+
+  const angle = signedAngleBetween(rotationStartVec, rotationCurrentVec, rotationAxis);
+  if (!isFinite(angle) || Math.abs(angle) < 1e-4) {
+    return;
+  }
+  quat.setAxisAngle(rotationDeltaQuat, rotationAxis, angle);
+  quat.mul(shape.rotation, rotationDeltaQuat, rotationStartQuat);
+  quat.normalize(shape.rotation, shape.rotation);
+  quat.copy(rotationStartQuat, shape.rotation);
+  vec3.copy(rotationStartVec, rotationCurrentVec);
 }
 
 canvas.addEventListener("mousedown", e => {
@@ -484,14 +666,25 @@ canvas.addEventListener("mousedown", e => {
     const ray = computeMouseRay(e.clientX, e.clientY);
 
     if (selectedShape !== -1) {
-      const axis = pickGizmoAxis(ray.origin, ray.dir, shapes[selectedShape].pos);
-      if (axis !== -1) {
-        beginGizmoDrag(axis, ray.origin, ray.dir);
-        return;
+      const shapePos = shapes[selectedShape].pos;
+      if (gizmoMode === "rotate") {
+        const pick = pickRotationAxis(ray.origin, ray.dir, shapePos);
+        if (pick.axis !== -1 && pick.hitPoint) {
+          beginRotationDrag(pick.axis, pick.hitPoint);
+          return;
+        }
+      } else {
+        const axis = pickTranslationAxis(ray.origin, ray.dir, shapePos);
+        if (axis !== -1) {
+          beginTranslationDrag(axis, ray.origin, ray.dir);
+          return;
+        }
       }
     }
 
     gizmoActiveAxis = -1;
+    gizmoDragging = false;
+    gizmoDragType = null;
     selectedShape = pickShape(ray.origin, ray.dir);
     console.log("Selected shape:", selectedShape);
     // Update rounding control value
@@ -519,17 +712,24 @@ window.addEventListener("mouseup", () => {
   dragging = false;
   gizmoDragging = false;
   gizmoActiveAxis = -1;
+  gizmoDragType = null;
 });
 
+
+//TRANSLATION HANDLING!!!! do not fortget m8, this is the important one.
 window.addEventListener("mousemove", e => {
   if (gizmoDragging && selectedShape !== -1 && gizmoActiveAxis !== -1) {
     const ray = computeMouseRay(e.clientX, e.clientY);
-    const axisDir = GIZMO_DIRS[gizmoActiveAxis];
-    const t = projectRayToAxis(ray.origin, ray.dir, gizmoStartPos, axisDir);
-    if (t !== null) {
-      const delta = t - gizmoStartT;
-      const newPos = vec3.scaleAndAdd([], gizmoStartPos, axisDir, delta);
-      shapes[selectedShape].pos = newPos;
+    if (gizmoDragType === "translate") {
+      const axisDir = GIZMO_DIRS[gizmoActiveAxis];
+      const t = projectRayToAxis(ray.origin, ray.dir, gizmoStartPos, axisDir);
+      if (t !== null) {
+        const delta = t - gizmoStartT;
+        const newPos = vec3.scaleAndAdd([], gizmoStartPos, axisDir, delta);
+        shapes[selectedShape].pos = newPos;
+      }
+    } else if (gizmoDragType === "rotate") {
+      handleRotationDrag(ray.origin, ray.dir);
     }
     return;
   }
@@ -571,16 +771,22 @@ const uProj = gl.getUniformLocation(program, "uProj");
 const shapePosData   = new Float32Array(MAX_SHAPES * 3);
 const shapeTypeData  = new Int32Array(MAX_SHAPES);
 const shapeParamData = new Float32Array(MAX_SHAPES * 4);
+const shapeRotData   = new Float32Array(MAX_SHAPES * 4);
 
 function render() {
     // ---- build shape uniform data ----
-
+    {
+      const q = quat.create();
+      quat.setAxisAngle(q, [0, 1, 0], lightAngle);
+      vec3.transformQuat(lightDir, lightBaseDir, q);
+    }
     for (let i = 0; i < shapes.length; i++) {
       const s = shapes[i];
 
       shapePosData.set(s.pos, i * 3);
       shapeTypeData[i] = s.type;
       shapeParamData.set(s.params, i * 4);
+      shapeRotData.set(s.rotation, i * 4);
     }
 
     if (ui.darkMode) {
@@ -641,10 +847,12 @@ function render() {
       shapeData: {
         count: shapes.length,
         positions: shapePosData,
+        rotations: shapeRotData,
         types: shapeTypeData,
         params: shapeParamData,
       },
-      selectedShape
+      selectedShape,
+      lightDir,
     });
     gl.useProgram(program);
     gl.uniformMatrix4fv(uView, false, view);

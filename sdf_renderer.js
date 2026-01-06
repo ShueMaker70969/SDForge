@@ -59,47 +59,57 @@ export class SDFRenderer {
     this.uInvProj = gl.getUniformLocation(this.program, "uInvProj");
     this.uCamPos = gl.getUniformLocation(this.program, "uCameraPos");
 
+    //for adjusting the light direction in the scene. This is global light.
+    this.uLightDir = gl.getUniformLocation(this.program, "uLightDir");
+
     //The stuff necessary for the shape list, that defines the shapes in scene
     this.uShapeCount = gl.getUniformLocation(this.program, "uShapeCount");
     this.uShapePos   = gl.getUniformLocation(this.program, "uShapePos");
     this.uShapeType  = gl.getUniformLocation(this.program, "uShapeType");
     this.uShapeParams= gl.getUniformLocation(this.program, "uShapeParams");
+    this.uShapeRot   = gl.getUniformLocation(this.program, "uShapeRot");
 
     this.uSelectedShape = gl.getUniformLocation(this.program, "uSelectedShape");
   }
-  setShapes({ count, positions, types, params }) {
+  setShapes({ count, positions, rotations, types, params }) {
     const gl = this.gl;
     gl.useProgram(this.program);
 
     gl.uniform1i(this.uShapeCount, count);
     gl.uniform3fv(this.uShapePos, positions);
+    gl.uniform4fv(this.uShapeRot, rotations);
     gl.uniform1iv(this.uShapeType, types);
     gl.uniform4fv(this.uShapeParams, params);
   }
 
 
-  draw({ view, proj, invView, invProj, cameraPos, width, height, shapeData, selectedShape}) {
-  const gl = this.gl;
+  draw({ view, proj, invView, invProj, cameraPos, width, height, shapeData, selectedShape, lightDir, }) {
+    const gl = this.gl;
 
-  gl.useProgram(this.program);
-  gl.viewport(0, 0, width, height);
+    gl.useProgram(this.program);
+    gl.viewport(0, 0, width, height);
 
-  // camera uniforms
-  gl.uniformMatrix4fv(this.uView, false, view);
-  gl.uniformMatrix4fv(this.uProj, false, proj);
-  gl.uniformMatrix4fv(this.uInvView, false, invView);
-  gl.uniformMatrix4fv(this.uInvProj, false, invProj);
-  gl.uniform3fv(this.uCamPos, cameraPos);
+    if (lightDir) {
+      gl.uniform3fv(this.uLightDir, lightDir);
+    }
 
-  // shape uniforms MUST be here
-  gl.uniform1i(this.uShapeCount, shapeData.count);
-  gl.uniform3fv(this.uShapePos, shapeData.positions);
-  gl.uniform1iv(this.uShapeType, shapeData.types);
-  gl.uniform4fv(this.uShapeParams, shapeData.params);
+    // camera uniforms
+    gl.uniformMatrix4fv(this.uView, false, view);
+    gl.uniformMatrix4fv(this.uProj, false, proj);
+    gl.uniformMatrix4fv(this.uInvView, false, invView);
+    gl.uniformMatrix4fv(this.uInvProj, false, invProj);
+    gl.uniform3fv(this.uCamPos, cameraPos);
 
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
+    // shape uniforms MUST be here
+    gl.uniform1i(this.uShapeCount, shapeData.count);
+    gl.uniform3fv(this.uShapePos, shapeData.positions);
+    gl.uniform4fv(this.uShapeRot, shapeData.rotations);
+    gl.uniform1iv(this.uShapeType, shapeData.types);
+    gl.uniform4fv(this.uShapeParams, shapeData.params);
 
-  //selected shape is passed on, for the outline generation
-  gl.uniform1i(this.uSelectedShape, selectedShape);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    //selected shape is passed on, for the outline generation
+    gl.uniform1i(this.uSelectedShape, selectedShape);
   }
 }

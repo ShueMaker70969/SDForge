@@ -12,6 +12,9 @@ uniform mat4 uProj;
 uniform mat4 uInvView;
 uniform mat4 uInvProj;
 
+uniform vec3 uLightDir;
+
+
 #define MAX_SHAPES 16
 #define SHAPE_SPHERE 0
 #define SHAPE_BOX 1
@@ -22,6 +25,7 @@ uniform mat4 uInvProj;
 uniform int  uSelectedShape;
 uniform int  uShapeCount;
 uniform vec3 uShapePos[MAX_SHAPES];
+uniform vec4 uShapeRot[MAX_SHAPES];
 uniform int  uShapeType[MAX_SHAPES];
 uniform vec4 uShapeParams[MAX_SHAPES];
 
@@ -51,6 +55,11 @@ float sdTorus(vec3 p, vec2 t) {
     return length(q) - t.y;
 }
 
+vec3 rotateVecByQuat(vec3 v, vec4 q) {
+    vec3 t = 2.0 * cross(q.xyz, v);
+    return v + q.w * t + cross(q.xyz, t);
+}
+
 
 float mapScene(vec3 p) {
   float d = 1e9;
@@ -60,26 +69,29 @@ float mapScene(vec3 p) {
     if (i >= uShapeCount) break;
 
     vec3 q = p - uShapePos[i];
+    vec4 rot = uShapeRot[i];
+    vec4 invRot = vec4(-rot.xyz, rot.w);
+    vec3 local = rotateVecByQuat(q, invRot);
     float sd = 1e9;
 
     if (uShapeType[i] == SHAPE_SPHERE) {
-      sd = sdSphere(q, uShapeParams[i].x);
+      sd = sdSphere(local, uShapeParams[i].x);
     }
     if (uShapeType[i] == SHAPE_BOX) {
-      sd = sdBox(q, uShapeParams[i].xyz, uShapeParams[i].w); 
+      sd = sdBox(local, uShapeParams[i].xyz, uShapeParams[i].w); 
       // .w is the rounding value, pass it as 3rd arguement 
     }
     if (uShapeType[i] == SHAPE_CYL) {
-      sd = sdCylinder(q, uShapeParams[i].x, uShapeParams[i].y, uShapeParams[i].z);
+      sd = sdCylinder(local, uShapeParams[i].x, uShapeParams[i].y, uShapeParams[i].z);
       // .x = radius, .y = half-height, .z = rounding
     }
     if (uShapeType[i] == SHAPE_CAPSULE) {
       vec3 a = vec3(0.0, -uShapeParams[i].y, 0.0);
       vec3 b = vec3(0.0,  uShapeParams[i].y, 0.0);
-      sd = sdCapsule(q, a, b, uShapeParams[i].x);
+      sd = sdCapsule(local, a, b, uShapeParams[i].x);
     }
     if (uShapeType[i] == SHAPE_TORUS) {
-      sd = sdTorus(q, uShapeParams[i].xy);
+      sd = sdTorus(local, uShapeParams[i].xy);
     }
 
     if (sd < d) {
@@ -132,7 +144,7 @@ void main() {
 
   vec3 normal = calcNormal(hitPos);
 
-  vec3 lightDir = normalize(vec3(0.5, 1.0, 0.3));
+  vec3 lightDir = normalize(uLightDir);
   float diff = max(dot(normal, lightDir), 0.0);
   vec3 baseColor = vec3(diff);
 

@@ -3,18 +3,34 @@ export class UIOptions {
   constructor() {
     this.darkMode = false;
     this.invertY = false;
+    this.gizmoMode = "translate";
 
     // callbacks (assigned from outside)
     this.onAddShape = null;
     this.onUpdateBoxRounding = null; //box rounding updates
     this.onDeleteShape = null;
+    this.onGizmoModeChange = null;
+    this.onLightRotate = null;
 
     this._buildUI();
   }
 
   _buildUI() {
-    const panel = document.createElement("div");
-    panel.className = "ui-panel";
+    const leftPanel  = document.createElement("div");
+    const rightPanel = document.createElement("div");
+
+    leftPanel.className = "ui-panel";
+    leftPanel.style.position = "fixed";
+    leftPanel.style.top = "10px";
+    leftPanel.style.left = "10px";
+
+    rightPanel.className = "ui-panel";
+    rightPanel.style.position = "fixed";
+    rightPanel.style.top = "10px";
+    rightPanel.style.right = "10px";
+    rightPanel.style.width = "auto";
+    rightPanel.style.maxWidth = "260px";
+
 
     // ---- Dark mode ----
     const darkLabel = document.createElement("label");
@@ -38,6 +54,33 @@ export class UIOptions {
     });
 
     invertLabel.append(invertCheckbox, " Invert Y rotation");
+
+    // ---- Gizmo Mode ----
+    const gizmoLabel = document.createElement("label");
+    gizmoLabel.textContent = "Gizmo mode:";
+    gizmoLabel.style.display = "flex";
+    gizmoLabel.style.flexDirection = "column";
+    gizmoLabel.style.gap = "0.25rem";
+
+    const gizmoSelect = document.createElement("select");
+    [
+      ["translate", "Translate"],
+      ["rotate", "Rotate"],
+    ].forEach(([val, text]) => {
+      const opt = document.createElement("option");
+      opt.value = val;
+      opt.textContent = text;
+      gizmoSelect.appendChild(opt);
+    });
+    gizmoSelect.value = this.gizmoMode;
+
+    gizmoSelect.addEventListener("change", () => {
+      this.gizmoMode = gizmoSelect.value;
+      if (this.onGizmoModeChange) {
+        this.onGizmoModeChange(this.gizmoMode);
+      }
+    });
+    gizmoLabel.appendChild(gizmoSelect);
 
     // ---- Primitive picker ----
     const addRow = document.createElement("div");
@@ -80,6 +123,30 @@ export class UIOptions {
     });
     addRow.append(addShapeBtn, shapeSelect, deleteShapeBtn);
 
+    //light control
+    // ---- Light Rotation ----
+    const lightLabel = document.createElement("label");
+    lightLabel.textContent = "Light rotation";
+    lightLabel.style.display = "flex";
+    lightLabel.style.flexDirection = "column";
+    lightLabel.style.gap = "0.25rem";
+
+    const lightSlider = document.createElement("input");
+    lightSlider.type = "range";
+    lightSlider.min = "0";
+    lightSlider.max = "360";
+    lightSlider.step = "1";
+    lightSlider.value = "0";
+
+    lightSlider.addEventListener("input", (e) => {
+      const deg = parseFloat(e.target.value);
+      if (this.onLightRotate) {
+        this.onLightRotate(deg);
+      }
+    });
+
+    lightLabel.appendChild(lightSlider);
+    rightPanel.append(lightLabel);
 
 
     // ----  Rounding Control ----
@@ -135,15 +202,18 @@ export class UIOptions {
     
     this.deleteShapeBtn = deleteShapeBtn;
 
-    panel.append(
+    leftPanel.append(
       darkLabel,
       invertLabel,
+      gizmoLabel,
       document.createElement("hr"),
       addRow,
       roundingContainer
     );
 
-    document.body.appendChild(panel);
+    document.body.appendChild(leftPanel);
+    document.body.appendChild(rightPanel);
+
   }
 
   // Method to update rounding control visibility and value
