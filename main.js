@@ -39,7 +39,7 @@ const GIZMO_AXIS_COLORS = [
   [0, 1, 0], // Z
 ];
 
-let gizmoMode = "translate";
+let gizmoMode = "select";
 
 function defaultParamsForType(type) {
   //here, each parameter array has certain number of elements, and may mean different things depending on the shape. Cylinder uses params[2] for rounding, box uses params[3] for rounding, etc. Gotta fix this later, since it is messy and likely to cause bugs later. 
@@ -317,6 +317,134 @@ void main() {
 }
 `;
 
+// New shader, function and FBO dedicated for the outline pass
+// ++=============================================
+
+let outlineFBO = null;
+let sceneColorTex = null;
+let selMaskTex = null;
+let sceneDepthRB = null;
+
+let outlineProg = null;
+let uSceneColorLoc, uSelMaskLoc, uTexelLoc, uOutlineColorLoc, uThicknessLoc;
+
+function createColorTex(w, h, internalFormat, format, type) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, w, h, 0, format, type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  return tex;
+}
+
+function createOutlineFBO() {
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Cleanup old
+  if (sceneColorTex) gl.deleteTexture(sceneColorTex);
+  if (selMaskTex) gl.deleteTexture(selMaskTex);
+  if (sceneDepthRB) gl.deleteRenderbuffer(sceneDepthRB);
+  if (outlineFBO) gl.deleteFramebuffer(outlineFBO);
+
+  outlineFBO = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, outlineFBO);
+
+  // Color attachment 0: scene color
+  sceneColorTex = createColorTex(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, sceneColorTex, 0);
+
+  // Color attachment 1: selection mask
+  // WebGL2 supports R8. If your platform is picky, use RGBA8 here too.
+  selMaskTex = createColorTex(w, h, gl.R8, gl.RED, gl.UNSIGNED_BYTE);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, selMaskTex, 0);
+
+  // Depth
+  sceneDepthRB = gl.createRenderbuffer();
+  gl.bindRenderbuffer(gl.RENDERBUFFER, sceneDepthRB);
+  gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, w, h);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, sceneDepthRB);
+
+  // Tell WebGL we will draw to both attachments
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+
+  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  if (status !== gl.FRAMEBUFFER_COMPLETE) {
+    console.error("Outline FBO incomplete:", status.toString(16));
+  }
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+}
+createOutlineFBO();
+
+
+const OUTLINE_VS = `#version 300 es
+precision highp float;
+
+out vec2 vUV;
+
+// Fullscreen triangle (no VBO needed)
+void main() {
+  // gl_VertexID: 0,1,2
+  vec2 p = vec2(
+    (gl_VertexID == 1) ? 3.0 : -1.0,
+    (gl_VertexID == 2) ? 3.0 : -1.0
+  );
+  vUV = 0.5 * (p + 1.0);
+  gl_Position = vec4(p, 0.0, 1.0);
+}
+`;
+
+const OUTLINE_FS = `#version 300 es
+precision highp float;
+
+in vec2 vUV;
+out vec4 outColor;
+
+uniform sampler2D uSceneColor;
+uniform sampler2D uSelMask;
+
+uniform vec2 uTexel;        // (1/width, 1/height)
+uniform vec3 uOutlineColor; // e.g. (1,0.8,0)
+uniform float uThickness;   // e.g. 2.0
+
+void main() {
+  vec4 base = texture(uSceneColor, vUV);
+  float c = texture(uSelMask, vUV).r;
+
+  // If not selected pixel, just show base color (no outline)
+  if (c < 0.5) {
+    outColor = base;
+    return;
+  }
+
+  // Edge detection: if any neighbor within thickness is not selected => outline
+  float edge = 0.0;
+  int t = int(max(1.0, uThickness));
+
+  for (int y = -6; y <= 6; y++) {        // max supported thickness here
+    for (int x = -6; x <= 6; x++) {
+      if (abs(x) > t || abs(y) > t) continue;
+      vec2 uv = vUV + vec2(float(x), float(y)) * uTexel;
+      float n = texture(uSelMask, uv).r;
+      if (n < 0.5) edge = 1.0;
+    }
+  }
+
+  if (edge > 0.5) {
+    outColor = vec4(uOutlineColor, 1.0);
+  } else {
+    outColor = base;
+  }
+}
+`;
+// =============================================++
+
+
 function createShader(type, src) {
   const s = gl.createShader(type);
   gl.shaderSource(s, src);
@@ -325,6 +453,25 @@ function createShader(type, src) {
     console.error(gl.getShaderInfoLog(s));
   return s;
 }
+
+function createProgram(vsSrc, fsSrc) {
+  const prog = gl.createProgram();
+  gl.attachShader(prog, createShader(gl.VERTEX_SHADER, vsSrc));
+  gl.attachShader(prog, createShader(gl.FRAGMENT_SHADER, fsSrc));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    console.error(gl.getProgramInfoLog(prog));
+  }
+  return prog;
+}
+
+outlineProg = createProgram(OUTLINE_VS, OUTLINE_FS);
+uSceneColorLoc = gl.getUniformLocation(outlineProg, "uSceneColor");
+uSelMaskLoc = gl.getUniformLocation(outlineProg, "uSelMask");
+uTexelLoc = gl.getUniformLocation(outlineProg, "uTexel");
+uOutlineColorLoc = gl.getUniformLocation(outlineProg, "uOutlineColor");
+uThicknessLoc = gl.getUniformLocation(outlineProg, "uThickness");
+
 
 const program = gl.createProgram();
 gl.attachShader(program, createShader(gl.VERTEX_SHADER, vsSource));
@@ -611,8 +758,8 @@ function pickRotationAxis(rayOrigin, rayDir, origin) {
 }
 
 
-// ==========================================
-// FROM HERE TO NEXT CLOSE === LINE, IT IS AFFINE TRANSFORMATION DRAG HANDLING
+// ++========================================
+// AFFINE TRANSFORMATION DRAG HANDLING
 function beginTranslationDrag(axisIndex, rayOrigin, rayDir) {
   gizmoActiveAxis = axisIndex;
   gizmoDragging = true;
@@ -667,27 +814,25 @@ function beginKeyboardGizmoDrag() {
 
   const ray = lastMouseRay; // explained below
   const shapePos = shapes[selectedShape].pos;
-
-  if (gizmoMode === "translate") {
-    beginTranslationDrag(axisIndex, ray.origin, ray.dir);
-  } else if (gizmoMode === "rotate") {
-    // Fake a hit point on the rotation plane
-    const hit = intersectRayPlane(
-      ray.origin,
-      ray.dir,
-      shapePos,
-      GIZMO_DIRS[axisIndex]
-    );
-    if (hit) beginRotationDrag(axisIndex, hit);
-  } else if (gizmoMode === "scale") {
-    beginScaleDrag(axisIndex, ray.origin, ray.dir);
-  }
+  if (gizmoMode !== "select"){
+    if (gizmoMode === "translate") {
+      beginTranslationDrag(axisIndex, ray.origin, ray.dir);
+    } else if (gizmoMode === "rotate") {
+      // Fake a hit point on the rotation plane
+      const hit = intersectRayPlane(
+        ray.origin,
+        ray.dir,
+        shapePos,
+        GIZMO_DIRS[axisIndex]
+      );
+      if (hit) beginRotationDrag(axisIndex, hit);
+    } else if (gizmoMode === "scale") {
+      beginScaleDrag(axisIndex, ray.origin, ray.dir);
+    }
+  } 
 }
-
-
-
 // END OF AFFIE TRANSFORMATION DRAG HANDLING
-// ==========================================
+// ========================================++
 
 
 function projectPointToPlaneVector(point, origin, axisDir, out) {
@@ -771,6 +916,15 @@ window.addEventListener("keydown", (e) => {
     return;
   }
 
+  // --------------------------------
+  // Delete (X). This is placed before x, so that this wins before axis constraint.
+  // ---------------------------------
+  if (key === "x" && gizmoMode === "select" && selectedShape !== -1) {
+    deleteSelectedShape();
+    return;
+  }
+
+
   // -----------------------
   // Axis constraints HERE!!!!!! This is pressed after the g,r,s, to immediately enter axis selection, like in blender.
   // -----------------------
@@ -811,7 +965,7 @@ canvas.addEventListener("mousedown", e => {
       return;
     }
 
-    if (selectedShape !== -1) {
+    if (selectedShape !== -1 && gizmoMode !== "select") {
       const shapePos = shapes[selectedShape].pos;
       if (gizmoMode === "rotate") {
         const pick = pickRotationAxis(ray.origin, ray.dir, shapePos);
@@ -837,7 +991,18 @@ canvas.addEventListener("mousedown", e => {
     gizmoActiveAxis = -1;
     gizmoDragging = false;
     gizmoDragType = null;
-    selectedShape = pickShape(ray.origin, ray.dir);
+    const newSelection = pickShape(ray.origin, ray.dir);
+
+    if (newSelection !== selectedShape) {
+      selectedShape = newSelection;
+
+      gizmoMode = "select";
+      gizmoDragging = false;
+      gizmoActiveAxis = -1;
+      gizmoDragType = null;
+      activeAxis = null;
+    }
+
     console.log("Selected shape:", selectedShape);
     // Update rounding control value
     if (selectedShape !== -1) {
@@ -898,7 +1063,6 @@ window.addEventListener("mousemove", e => {
     }
     return;
   }
-
   if (!dragging) return;
 
   const dx = (e.clientX - lastX) / canvas.width;
@@ -926,9 +1090,7 @@ canvas.addEventListener("wheel", e => {
 
 canvas.addEventListener("contextmenu", e => e.preventDefault());
 
-/* ============================
-   Render loop
-============================ */
+
 
 const uView = gl.getUniformLocation(program, "uView");
 const uProj = gl.getUniformLocation(program, "uProj");
@@ -939,97 +1101,142 @@ const shapeParamData = new Float32Array(MAX_SHAPES * 4);
 const shapeRotData   = new Float32Array(MAX_SHAPES * 4);
 const shapeScaleData = new Float32Array(MAX_SHAPES * 3);
 
+
+// =========================================
+// RENDER LOOP HEREEEE
+// =========================================
 function render() {
-    // ---- build shape uniform data ----
-    {
-      const q = quat.create();
-      quat.setAxisAngle(q, [0, 1, 0], lightAngle);
-      vec3.transformQuat(lightDir, lightBaseDir, q);
-    }
-    for (let i = 0; i < shapes.length; i++) {
-      const s = shapes[i];
+  // ---------------------------------
+  // Update light direction
+  // ---------------------------------
+  {
+    const q = quat.create();
+    quat.setAxisAngle(q, [0, 1, 0], lightAngle);
+    vec3.transformQuat(lightDir, lightBaseDir, q);
+  }
 
-      shapePosData.set(s.pos, i * 3);
-      shapeTypeData[i] = s.type;
-      shapeParamData.set(s.params, i * 4);
-      shapeRotData.set(s.rotation, i * 4);
-      shapeScaleData.set(s.scale, i * 3);
-    }
+  // ---------------------------------
+  // Build shape uniform data
+  // ---------------------------------
+  for (let i = 0; i < shapes.length; i++) {
+    const s = shapes[i];
+    shapePosData.set(s.pos, i * 3);
+    shapeTypeData[i] = s.type;
+    shapeParamData.set(s.params, i * 4);
+    shapeRotData.set(s.rotation, i * 4);
+    shapeScaleData.set(s.scale, i * 3);
+  }
 
-    if (ui.darkMode) {
-    gl.clearColor(0.08, 0.08, 0.08, 1);
-    } else {
-    gl.clearColor(1, 1, 1, 1);
-    }
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.enable(gl.DEPTH_TEST);
+  // ---------------------------------
+  // Camera matrices
+  // ---------------------------------
+  const view = mat4.create();
+  const proj = mat4.create();
 
-    const view = mat4.create();
-    const proj = mat4.create();
+  mat4.lookAt(view, camera.getEye(), camera.target, [0, 1, 0]);
+  mat4.perspective(
+    proj,
+    Math.PI / 4,
+    canvas.width / canvas.height,
+    0.1,
+    100.0
+  );
 
-    mat4.lookAt(view, camera.getEye(), camera.target, [0,1,0]);
-    mat4.perspective(proj, Math.PI / 4, canvas.width / canvas.height, 0.1, 100.0);
+  mat4.invert(invView, view);
+  mat4.invert(invProj, proj);
 
-    //ADDITIONAL INVERSE VIEW MATRIX
-    mat4.invert(invView, view);
-    mat4.invert(invProj, proj);
+  // =========================================================
+  // PASS A — Render WORLD into outlineFBO (shared depth)
+  //   - grid
+  //   - axes
+  //   - SDF shapes
+  // =========================================================
+  gl.bindFramebuffer(gl.FRAMEBUFFER, outlineFBO);
+  gl.viewport(0, 0, canvas.width, canvas.height);
 
-        // --- SDF pass ---
-    
-    gl.useProgram(program);
+  
+  gl.clearColor(0.08, 0.08, 0.08, 1);
 
-    gl.uniformMatrix4fv(uView, false, view);
-    gl.uniformMatrix4fv(uProj, false, proj);
+  gl.enable(gl.DEPTH_TEST);
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  
+  // ---- SDF shapes FIRST (writes depth) ----
+  sdfRenderer.draw({
+    view,
+    proj,
+    invView,
+    invProj,
+    cameraPos: camera.getEye(),
+    width: canvas.width,
+    height: canvas.height,
+    shapeData: {
+      count: shapes.length,
+      positions: shapePosData,
+      rotations: shapeRotData,
+      types: shapeTypeData,
+      params: shapeParamData,
+      scales: shapeScaleData,
+    },
+    selectedShape,
+    lightDir,
+  });
 
-    // --- draw grid ---
-    gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
-    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, colBuffer);
-    gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
+  // ---- grid AFTER SDF (depth-tested) ----
+  gl.useProgram(program);
+  gl.uniformMatrix4fv(uView, false, view);
+  gl.uniformMatrix4fv(uProj, false, proj);
 
-    gl.drawArrays(gl.LINES, 0, gridVertexCount);
-    // --- draw axes (always visible) ---
-    gl.disable(gl.DEPTH_TEST);
+  gl.enable(gl.DEPTH_TEST);
+  gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+  gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, colBuffer);
+  gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
+  gl.drawArrays(gl.LINES, 0, gridVertexCount);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, axisPosBuffer);
-    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+  // ---- axes LAST (always visible) ----
+  gl.bindBuffer(gl.ARRAY_BUFFER, axisPosBuffer);
+  gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, axisColorBuffer);
+  gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
+  gl.drawArrays(gl.LINES, 0, 4);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, axisColorBuffer);
-    gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
+  // =========================================================
+  // PASS B — Outline fullscreen post-process
+  // =========================================================
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.disable(gl.DEPTH_TEST);
 
-    gl.drawArrays(gl.LINES, 0, 4);
+  gl.useProgram(outlineProg);
 
-    // restore for future objects
-    gl.enable(gl.DEPTH_TEST);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, sceneColorTex);
+  gl.uniform1i(uSceneColorLoc, 0);
 
-    sdfRenderer.draw({
-      view,
-      proj,
-      invView,
-      invProj,
-      cameraPos: camera.getEye(),
-      width: canvas.width,
-      height: canvas.height,
-      shapeData: {
-        count: shapes.length,
-        positions: shapePosData,
-        rotations: shapeRotData,
-        types: shapeTypeData,
-        params: shapeParamData,
-        scales: shapeScaleData,
-      },
-      selectedShape,
-      lightDir,
-    });
-    gl.useProgram(program);
-    gl.uniformMatrix4fv(uView, false, view);
-    gl.uniformMatrix4fv(uProj, false, proj);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, selMaskTex);
+  gl.uniform1i(uSelMaskLoc, 1);
 
-    // draw gizmo
-    if (selectedShape !== -1) {
-      drawGizmo(shapes[selectedShape].pos, gizmoActiveAxis);
-    }
+  gl.uniform2f(uTexelLoc, 1.0 / canvas.width, 1.0 / canvas.height);
+  gl.uniform3f(uOutlineColorLoc, 1.0, 0.8, 0.0);
+  gl.uniform1f(uThicknessLoc, 2.0);
+
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // =========================================================
+  // PASS C — Gizmo (on top of everything)
+  // =========================================================
+  gl.useProgram(program);
+  gl.uniformMatrix4fv(uView, false, view);
+  gl.uniformMatrix4fv(uProj, false, proj);
+
+  gl.enable(gl.DEPTH_TEST);
+  if (selectedShape !== -1 && gizmoMode !== "select") {
+    drawGizmo(shapes[selectedShape].pos, gizmoActiveAxis);
+  }
 
   requestAnimationFrame(render);
 }
