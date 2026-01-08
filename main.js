@@ -801,6 +801,15 @@ window.addEventListener("keydown", (e) => {
 canvas.addEventListener("mousedown", e => {
   if (e.button === 0) {
     const ray = computeMouseRay(e.clientX, e.clientY);
+    if (gizmoDragging) {
+      gizmoDragging = false;
+      gizmoActiveAxis = -1;
+      gizmoDragType = null;
+      activeAxis = null;
+
+      // IMPORTANT: do NOT select/deselect
+      return;
+    }
 
     if (selectedShape !== -1) {
       const shapePos = shapes[selectedShape].pos;
