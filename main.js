@@ -652,8 +652,43 @@ function beginScaleDrag(axisIndex, rayOrigin, rayDir) {
   // vec3.copy(scaleStart, shapes[selectedShape].scale);
 }
 
+
+// ADDITIONAL GIZMO DRAG HANDLER. Called if gizmo drag happens from SHORTCUT KEYS (g,r,s + x,y,z)
+function beginKeyboardGizmoDrag() {
+  if (selectedShape === -1) return;
+  if (!activeAxis) return;
+
+  const axisIndex = axisCharToIndex(activeAxis);
+  if (axisIndex === -1) return;
+
+  gizmoActiveAxis = axisIndex;
+  gizmoDragging = true;
+  gizmoDragType = gizmoMode;
+
+  const ray = lastMouseRay; // explained below
+  const shapePos = shapes[selectedShape].pos;
+
+  if (gizmoMode === "translate") {
+    beginTranslationDrag(axisIndex, ray.origin, ray.dir);
+  } else if (gizmoMode === "rotate") {
+    // Fake a hit point on the rotation plane
+    const hit = intersectRayPlane(
+      ray.origin,
+      ray.dir,
+      shapePos,
+      GIZMO_DIRS[axisIndex]
+    );
+    if (hit) beginRotationDrag(axisIndex, hit);
+  } else if (gizmoMode === "scale") {
+    beginScaleDrag(axisIndex, ray.origin, ray.dir);
+  }
+}
+
+
+
 // END OF AFFIE TRANSFORMATION DRAG HANDLING
 // ==========================================
+
 
 function projectPointToPlaneVector(point, origin, axisDir, out) {
   vec3.sub(out, point, origin);
@@ -690,6 +725,78 @@ function handleRotationDrag(rayOrigin, rayDir) {
   quat.copy(rotationStartQuat, shape.rotation);
   vec3.copy(rotationStartVec, rotationCurrentVec);
 }
+
+let activeAxis = null; // "x" | "y" | "z" | null
+
+//This converts the keyboard input into axis index
+function axisCharToIndex(axis) {
+  if (axis === "x") return 0;
+  if (axis === "y") return 2;
+  if (axis === "z") return 1;
+  return -1;
+}
+
+window.addEventListener("keydown", (e) => {
+  if (
+    e.target.tagName === "INPUT" ||
+    e.target.tagName === "TEXTAREA" ||
+    e.target.isContentEditable
+  ) {
+    return;
+  }
+
+  const key = e.key.toLowerCase();
+
+  // -----------------------
+  // Transform modes
+  // -----------------------
+  if (key === "g") {
+    gizmoMode = "translate";
+    activeAxis = null;
+    console.log("Mode: translate");
+    return;
+  }
+
+  if (key === "r") {
+    gizmoMode = "rotate";
+    activeAxis = null;
+    console.log("Mode: rotate");
+    return;
+  }
+
+  if (key === "s") {
+    gizmoMode = "scale";
+    activeAxis = null;
+    console.log("Mode: scale");
+    return;
+  }
+
+  // -----------------------
+  // Axis constraints HERE!!!!!! This is pressed after the g,r,s, to immediately enter axis selection, like in blender.
+  // -----------------------
+  if (!gizmoMode) return;
+
+  if (key === "x" || key === "y" || key === "z") {
+    // toggle behavior like Blender
+    if (activeAxis === key) {
+      activeAxis = null;
+      gizmoActiveAxis = -1;
+      gizmoDragging = false;
+      return;
+    }
+
+    activeAxis = key;
+    console.log(`Axis constraint: ${activeAxis.toUpperCase()}`);
+
+    beginKeyboardGizmoDrag();
+  }
+  if (key === "escape") {
+    gizmoDragging = false;
+    gizmoActiveAxis = -1;
+    activeAxis = null;
+  }
+});
+
 
 canvas.addEventListener("mousedown", e => {
   if (e.button === 0) {
@@ -751,9 +858,11 @@ window.addEventListener("mouseup", () => {
   gizmoDragType = null;
 });
 
+let lastMouseRay = null;
 
 //TRANSLATION HANDLING!!!! do not fortget m8, this is the important one.
 window.addEventListener("mousemove", e => {
+  lastMouseRay = computeMouseRay(e.clientX, e.clientY);
   if (gizmoDragging && selectedShape !== -1 && gizmoActiveAxis !== -1) {
     const ray = computeMouseRay(e.clientX, e.clientY);
     if (gizmoDragType === "translate") {
