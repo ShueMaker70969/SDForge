@@ -1,8 +1,7 @@
 // ui_options.js
 export class UIOptions {
   constructor() {
-    this.darkMode = false;
-    this.invertY = false;
+    this.invertY = true;
     this.gizmoMode = "translate";
 
     // callbacks (assigned from outside)
@@ -30,19 +29,6 @@ export class UIOptions {
     rightPanel.style.right = "10px";
     rightPanel.style.width = "auto";
     rightPanel.style.maxWidth = "260px";
-
-
-    // ---- Dark mode ----
-    const darkLabel = document.createElement("label");
-    const darkCheckbox = document.createElement("input");
-    darkCheckbox.type = "checkbox";
-
-    darkCheckbox.addEventListener("change", () => {
-      this.darkMode = darkCheckbox.checked;
-      document.body.classList.toggle("dark", this.darkMode);
-    });
-
-    darkLabel.append(darkCheckbox, " Dark mode");
 
     // ---- Invert Y ----
     const invertLabel = document.createElement("label");
@@ -205,7 +191,6 @@ export class UIOptions {
     this.deleteShapeBtn = deleteShapeBtn;
 
     leftPanel.append(
-      darkLabel,
       invertLabel,
       gizmoLabel,
       document.createElement("hr"),

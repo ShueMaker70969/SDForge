@@ -1155,11 +1155,7 @@ function render() {
   gl.viewport(0, 0, canvas.width, canvas.height);
 
   
-  if (ui.darkMode) {
-    gl.clearColor(0.08, 0.08, 0.08, 1);
-  } else {
-    gl.clearColor(1, 1, 1, 1);
-  }
+  gl.clearColor(0.08, 0.08, 0.08, 1);
 
   gl.enable(gl.DEPTH_TEST);
   gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
