@@ -64,6 +64,7 @@ export class UIOptions {
 
     const gizmoSelect = document.createElement("select");
     [
+      ["select", "Select"],
       ["translate", "Translate"],
       ["rotate", "Rotate"],
       ["scale", "Scale"],

@@ -84,7 +84,7 @@ export class SDFRenderer {
   }
 
 
-  draw({ view, proj, invView, invProj, cameraPos, width, height, shapeData, selectedShape, lightDir, }) {
+  draw({ view, proj, invView, invProj, cameraPos, width, height, shapeData, selectedShape, lightDir,}) {
     const gl = this.gl;
 
     gl.useProgram(this.program);
@@ -109,9 +109,14 @@ export class SDFRenderer {
     gl.uniform4fv(this.uShapeParams, shapeData.params);
     gl.uniform3fv(this.uShapeScale, shapeData.scales);
 
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-
     //selected shape is passed on, for the outline generation
     gl.uniform1i(this.uSelectedShape, selectedShape);
+
+    gl.drawBuffers([
+      gl.COLOR_ATTACHMENT0,
+      gl.COLOR_ATTACHMENT1
+    ]);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
   }
 }

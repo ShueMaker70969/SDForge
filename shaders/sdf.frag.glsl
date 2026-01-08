@@ -2,7 +2,10 @@
 precision highp float;
 
 in vec2 vUV;
-out vec4 outColor;
+
+// We now have two outputs, for masking to enable clean outline
+layout(location = 0) out vec4 outColor;
+layout(location = 1) out vec4 outMask;
 
 int gHitShape = -1;
 
@@ -13,7 +16,6 @@ uniform mat4 uInvView;
 uniform mat4 uInvProj;
 
 uniform vec3 uLightDir;
-
 
 #define MAX_SHAPES 16
 #define SHAPE_SPHERE 0
@@ -157,21 +159,14 @@ void main() {
   float diff = max(dot(normal, lightDir), 0.0);
   vec3 baseColor = vec3(diff);
 
-  // --- silhouette outline ---
-  float facing = abs(dot(normalize(normal), normalize(-rd)));
-  float outlineStart = 0.30; // where outline begins
-  float outlineEnd   = 0.02; // where outline is strongest
-
-  float outline = smoothstep(outlineStart, outlineEnd, facing);
-
-
   vec3 col = baseColor;
-  if (hitShape == uSelectedShape && outline > 0.0) {
-    outColor = vec4(1.0, 0.8, 0.0, 1.0); // constant yellow
-    return;
-  }
 
+  // Normal shaded color
   outColor = vec4(col, 1.0);
+
+  // Selection mask: 1.0 for selected shape pixels, else 0.0
+  float m = (hitShape == uSelectedShape) ? 1.0 : 0.0;
+  outMask = vec4(m, 0.0, 0.0, 1.0);
 
   vec4 viewPos = uView * vec4(hitPos, 1.0);
   vec4 clipPos = uProj * viewPos;
