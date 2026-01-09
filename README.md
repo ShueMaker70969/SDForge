@@ -26,6 +26,7 @@ To run the demo, access [Live Demo](https://shuemaker70969.github.io/SDForge/)
 | Shift + Left click | Select multiple shapes |
 
 ### Shortcut Keys
+| Input | Action |
 |------|-------|
 | Shift + a | Add shape to scene |
 | x | delete selected shape |
@@ -34,5 +35,5 @@ To run the demo, access [Live Demo](https://shuemaker70969.github.io/SDForge/)
 | g | Enter translation mode |
 | r | Enter rotation mode |
 | s | Enter scale mode |
-| During transformation mode (x | y | z) | Transform in selected axis |
+| x,  y,  z (During transformation mode)| Transform in selected axis |
 | escape | Exit transformation mode |
