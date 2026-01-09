@@ -24,7 +24,6 @@ uniform vec3 uLightDir;
 #define SHAPE_CAPSULE 3
 #define SHAPE_TORUS 4
 
-uniform int  uSelectedShape;
 uniform int  uShapeCount;
 uniform vec3 uShapePos[MAX_SHAPES];
 uniform vec4 uShapeRot[MAX_SHAPES];
@@ -164,9 +163,9 @@ void main() {
   // Normal shaded color
   outColor = vec4(col, 1.0);
 
-  // Selection mask: 1.0 for selected shape pixels, else 0.0
-  float m = (hitShape == uSelectedShape) ? 1.0 : 0.0;
-  outMask = vec4(m, 0.0, 0.0, 1.0);
+  // Encode hit shape index (+1 so 0 can represent background)
+  float encodedId = (hitShape >= 0) ? (float(hitShape) + 1.0) / 255.0 : 0.0;
+  outMask = vec4(encodedId, 0.0, 0.0, 1.0);
 
   vec4 viewPos = uView * vec4(hitPos, 1.0);
   vec4 clipPos = uProj * viewPos;
