@@ -152,6 +152,17 @@ function applySelection(newIndex) {
     clamped = -1;
   }
 
+  if (selectedShape === clamped && gizmoMode !== "select") {
+    gizmoMode = "select";
+    gizmoDragging = false;
+    gizmoActiveAxis = -1;
+    gizmoDragType = null;
+    activeAxis = null;
+
+    updateSelectionUI();
+    return;
+  }
+
   if (selectedShape === clamped) {
     updateSelectionUI();
     return;
@@ -195,6 +206,8 @@ function uploadShapes() {
 function drawGizmo(pos, activeAxis = -1) {
   if (gizmoMode === "rotate") {
     drawRotationGizmo(pos, activeAxis);
+  } else if (gizmoMode === "scale") {
+    drawScaleGizmo(pos, activeAxis);
   } else {
     drawTranslationGizmo(pos, activeAxis);
   }
@@ -640,6 +653,81 @@ const GIZMO_DIRS = [
   vec3.fromValues(0, 0, 1),
 ];
 
+function getScaleGizmoDirs(shape) {
+  const dirs = [
+    vec3.fromValues(1, 0, 0),
+    vec3.fromValues(0, 1, 0),
+    vec3.fromValues(0, 0, 1),
+  ];
+
+  if (!shape) return dirs;
+
+  for (let i = 0; i < 3; i++) {
+    vec3.transformQuat(dirs[i], dirs[i], shape.rotation);
+    vec3.normalize(dirs[i], dirs[i]);
+  }
+
+  return dirs;
+}
+
+function drawScaleGizmo(pos, activeAxis = -1) {
+  const L = GIZMO_LENGTH;
+  const shape = shapes[selectedShape];
+  const dirs = getScaleGizmoDirs(shape);
+
+  const verts = new Float32Array(18);
+  const colors = new Float32Array(18);
+
+  for (let i = 0; i < 3; i++) {
+    const d = dirs[i];
+    const o = i * 6;
+
+    verts[o    ] = pos[0];
+    verts[o + 1] = pos[1];
+    verts[o + 2] = pos[2];
+
+    verts[o + 3] = pos[0] + d[0] * L;
+    verts[o + 4] = pos[1] + d[1] * L;
+    verts[o + 5] = pos[2] + d[2] * L;
+
+    const c = activeAxis === i ? GIZMO_HIGHLIGHT_COLOR : GIZMO_AXIS_COLORS[i];
+    colors.set(c, o);
+    colors.set(c, o + 3);
+  }
+
+  gl.disable(gl.DEPTH_TEST);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, gizmoPosBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
+  gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, gizmoColorBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
+  gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, 0);
+
+  gl.drawArrays(gl.LINES, 0, 6);
+  gl.enable(gl.DEPTH_TEST);
+}
+
+function pickScaleAxis(rayOrigin, rayDir, origin, shape) {
+  const dirs = getScaleGizmoDirs(shape);
+  const threshold = 0.15;
+  let bestAxis = -1;
+  let bestDist = Infinity;
+
+  for (let i = 0; i < 3; i++) {
+    const dir = dirs[i];
+    const { t, dist } = closestPointParamsOnLines(origin, dir, rayOrigin, rayDir);
+    if (dist < threshold && t >= 0 && t <= GIZMO_LENGTH) {
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestAxis = i;
+      }
+    }
+  }
+  return bestAxis;
+}
+
 function buildCircleBasis(axis) {
   const helper = Math.abs(axis[1]) < 0.99 ? vec3.fromValues(0, 1, 0) : vec3.fromValues(1, 0, 0);
   const tangent = vec3.normalize(vec3.create(), vec3.cross(vec3.create(), axis, helper));
@@ -877,18 +965,12 @@ function queuePickRequest(clientX, clientY) {
   const normY = (clientY - rect.top) / rect.height;
   if (normX < 0 || normX > 1 || normY < 0 || normY > 1) return;
 
-  const pixelX = Math.min(
-    canvas.width - 1,
-    Math.max(0, Math.floor(normX * canvas.width))
-  );
-  const pixelYTop = Math.min(
-    canvas.height - 1,
-    Math.max(0, Math.floor(normY * canvas.height))
-  );
+  const pixelX = Math.floor(normX * canvas.width);
+  const pixelY = Math.floor(normY * canvas.height);
 
   pendingPick = {
     x: pixelX,
-    y: canvas.height - 1 - pixelYTop,
+    y: Math.floor(canvas.height - pixelY - 1),
   };
 }
 
@@ -906,8 +988,8 @@ function processPendingPick() {
     gl.UNSIGNED_BYTE,
     pickPixel
   );
-  gl.readBuffer(gl.COLOR_ATTACHMENT0);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.readBuffer(gl.COLOR_ATTACHMENT0);
 
   const value = pickPixel[0];
   pendingPick = null;
@@ -989,9 +1071,14 @@ window.addEventListener("keydown", (e) => {
     beginKeyboardGizmoDrag();
   }
   if (key === "escape") {
+    gizmoMode = "select";
     gizmoDragging = false;
     gizmoActiveAxis = -1;
+    gizmoDragType = null;
     activeAxis = null;
+
+    console.log("Mode: select");
+    return;
   }
 });
 
@@ -1024,10 +1111,10 @@ canvas.addEventListener("mousedown", e => {
           return;
         }
       } else if (gizmoMode === "scale") {
-        const axis = pickTranslationAxis(ray.origin, ray.dir, shapePos);
-        if (axis !== -1) {
-          beginScaleDrag(axis, ray.origin, ray.dir); // <- new function
-          return;
+          const axis = pickScaleAxis(ray.origin, ray.dir, shapePos, shapes[selectedShape]);
+          if (axis !== -1) {
+            beginScaleDrag(axis, ray.origin, ray.dir);
+            return;
         }
       }
     }
@@ -1076,17 +1163,17 @@ window.addEventListener("mousemove", e => {
     } else if (gizmoDragType === "rotate") {
       handleRotationDrag(ray.origin, ray.dir);
     } else if (gizmoDragType === "scale") {
-      const axisDir = GIZMO_DIRS[gizmoActiveAxis];
-      const t = projectRayToAxis(ray.origin, ray.dir, gizmoStartPos, axisDir);
-      if (t !== null) {
-        const delta = t - gizmoStartT;
+        const axisDir =
+          getScaleGizmoDirs(shapes[selectedShape])[gizmoActiveAxis];
 
-        let speed = 0.3;
-        const factor = Math.exp(delta * speed);
-
-        shapes[selectedShape].scale[gizmoActiveAxis] =Math.max(0.05, gizmoStartScale * factor);
+        const t = projectRayToAxis(ray.origin, ray.dir, gizmoStartPos, axisDir);
+        if (t !== null) {
+          const delta = t - gizmoStartT;
+          const factor = Math.exp(delta * 0.3);
+          shapes[selectedShape].scale[gizmoActiveAxis] =
+            Math.max(0.05, gizmoStartScale * factor);
+        }
       }
-    }
     return;
   }
   if (!dragging) return;
