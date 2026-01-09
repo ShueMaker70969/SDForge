@@ -2,7 +2,9 @@
 export class UIOptions {
   constructor() {
     this.invertY = true;
-    this.gizmoMode = "translate";
+    this.gizmoMode = "select";
+    this.shapeSelect = null;
+    this.gizmoSelect = null;
 
     // callbacks (assigned from outside)
     this.onAddShape = null;
@@ -34,6 +36,7 @@ export class UIOptions {
     const invertLabel = document.createElement("label");
     const invertCheckbox = document.createElement("input");
     invertCheckbox.type = "checkbox";
+    invertCheckbox.checked = this.invertY;
 
     invertCheckbox.addEventListener("change", () => {
       this.invertY = invertCheckbox.checked;
@@ -61,9 +64,10 @@ export class UIOptions {
       gizmoSelect.appendChild(opt);
     });
     gizmoSelect.value = this.gizmoMode;
+    this.gizmoSelect = gizmoSelect;
 
     gizmoSelect.addEventListener("change", () => {
-      this.gizmoMode = gizmoSelect.value;
+      this.setGizmoMode(gizmoSelect.value);
       if (this.onGizmoModeChange) {
         this.onGizmoModeChange(this.gizmoMode);
       }
@@ -90,6 +94,7 @@ export class UIOptions {
       opt.textContent = label;
       shapeSelect.appendChild(opt);
     });
+    this.shapeSelect = shapeSelect;
 
     const addShapeBtn = document.createElement("button");
     addShapeBtn.textContent = "Add";
@@ -246,5 +251,16 @@ export class UIOptions {
     } else {
       this.roundingContainer.style.display = "none";
     }
+  }
+
+  setGizmoMode(mode) {
+    this.gizmoMode = mode;
+    if (this.gizmoSelect && this.gizmoSelect.value !== mode) {
+      this.gizmoSelect.value = mode;
+    }
+  }
+
+  getSelectedShapeType() {
+    return this.shapeSelect ? this.shapeSelect.value : "sphere";
   }
 }

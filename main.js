@@ -23,6 +23,7 @@ const SHAPE_TORUS   = 4;
 
 let invView = mat4.create();
 let invProj = mat4.create();
+let ui = null;
 
 //=================================================
 //VERY IMPORTANT. Keeps track of all the shapes in the scene.
@@ -38,10 +39,13 @@ const GIZMO_AXIS_COLORS = [
   [0, 0, 1], // Y
   [0, 1, 0], // Z
 ];
+const SECONDARY_OUTLINE_COLOR = [1.0, 0.8, 0.0];
+const ACTIVE_OUTLINE_COLOR = [1.0, 0.5, 0.0];
 const SHAPE_ID_SCALE = 255;
 const SHAPE_ID_TOLERANCE = 0.25 / SHAPE_ID_SCALE;
 
 let gizmoMode = "select";
+let activeAxis = null;
 
 function defaultParamsForType(type) {
   //here, each parameter array has certain number of elements, and may mean different things depending on the shape. Cylinder uses params[2] for rounding, box uses params[3] for rounding, etc. Gotta fix this later, since it is messy and likely to cause bugs later. 
@@ -66,7 +70,7 @@ function addShapeAtOrigin(type) {
     console.warn("Max shape count reached");
     return;
   }
-
+  const newIndex = shapes.length;
   shapes.push({
     type,
     pos: [0, 1, 0],
@@ -76,6 +80,29 @@ function addShapeAtOrigin(type) {
   });
 
   uploadShapes();
+  applySelection(newIndex);
+  return newIndex;
+}
+
+function addShapeByName(typeName) {
+  switch (typeName) {
+    case "box":
+      addShapeAtOrigin(SHAPE_BOX);
+      break;
+    case "cylinder":
+      addShapeAtOrigin(SHAPE_CYL);
+      break;
+    case "capsule":
+      addShapeAtOrigin(SHAPE_CAPSULE);
+      break;
+    case "torus":
+      addShapeAtOrigin(SHAPE_TORUS);
+      break;
+    case "sphere":
+    default:
+      addShapeAtOrigin(SHAPE_SPHERE);
+      break;
+  }
 }
 
 function shapeBoundingRadius(shape) {
@@ -135,49 +162,101 @@ function computeMouseRay(mouseX, mouseY) {
 }
 
 let selectedShape = -1;
+const selectedShapes = [];
 let pendingPick = null;
 const pickPixel = new Uint8Array(4);
 
+function isShapeSelected(index) {
+  return selectedShapes.includes(index);
+}
+
 function updateSelectionUI() {
-  if (selectedShape !== -1) {
+  if (!ui) return;
+  if (selectedShape !== -1 && shapes[selectedShape]) {
     ui.updateRoundingControl(selectedShape, shapes[selectedShape]);
   } else {
     ui.updateRoundingControl(-1, null);
   }
 }
 
-function applySelection(newIndex) {
-  let clamped = newIndex;
-  if (clamped < 0 || clamped >= shapes.length) {
-    clamped = -1;
+function clearSelection(updateUI = true) {
+  selectedShapes.length = 0;
+  selectedShape = -1;
+  changeGizmoMode("select");
+  if (updateUI) updateSelectionUI();
+}
+
+function addToSelection(index) {
+  if (index < 0) return;
+  const existingIdx = selectedShapes.indexOf(index);
+  if (existingIdx !== -1) {
+    selectedShapes.splice(existingIdx, 1);
   }
+  selectedShapes.push(index);
+  selectedShape = index;
+}
 
-  if (selectedShape === clamped && gizmoMode !== "select") {
-    gizmoMode = "select";
-    gizmoDragging = false;
-    gizmoActiveAxis = -1;
-    gizmoDragType = null;
-    activeAxis = null;
+function removeFromSelection(index) {
+  const idx = selectedShapes.indexOf(index);
+  if (idx !== -1) {
+    selectedShapes.splice(idx, 1);
+  }
+  if (selectedShapes.length === 0) {
+    selectedShape = -1;
+  } else if (selectedShape === index) {
+    selectedShape = selectedShapes[selectedShapes.length - 1];
+  }
+}
 
-    updateSelectionUI();
+function applySelection(index, options = {}) {
+  const additive = !!options.additive;
+  let targetIndex = index;
+  if (targetIndex >= shapes.length) {
+    targetIndex = -1;
+  }
+  if (targetIndex === -1) {
+    if (!additive) {
+      clearSelection();
+    }
     return;
   }
 
-  if (selectedShape === clamped) {
-    updateSelectionUI();
+  if (!additive) {
+    clearSelection(false);
+    addToSelection(targetIndex);
+  } else {
+    if (isShapeSelected(targetIndex)) {
+      removeFromSelection(targetIndex);
+    } else {
+      addToSelection(targetIndex);
+    }
+  }
+
+  updateSelectionUI();
+  if (!additive && selectedShape !== -1) {
+    changeGizmoMode("select");
+  }
+}
+
+function changeGizmoMode(mode, source = "code") {
+  if (gizmoMode === mode) {
+    if (source !== "ui" && ui) {
+      ui.setGizmoMode(mode);
+    }
     return;
   }
 
-  selectedShape = clamped;
-  console.log("Selected shape:", selectedShape);
-
-  gizmoMode = "select";
+  gizmoMode = mode;
   gizmoDragging = false;
   gizmoActiveAxis = -1;
   gizmoDragType = null;
   activeAxis = null;
-  updateSelectionUI();
+
+  if (source !== "ui" && ui) {
+    ui.setGizmoMode(mode);
+  }
 }
+
 
 
 //this function uploads the defined sdfs to the scene through the "shapes" list
@@ -341,7 +420,16 @@ let selMaskTex = null;
 let sceneDepthRB = null;
 
 let outlineProg = null;
-let uSceneColorLoc, uSelMaskLoc, uTexelLoc, uOutlineColorLoc, uThicknessLoc, uSelectedIdLoc, uIdToleranceLoc;
+let uSceneColorLoc,
+    uSelMaskLoc,
+    uTexelLoc,
+    uOutlineColorLoc,
+    uActiveOutlineColorLoc,
+    uThicknessLoc,
+    uActiveIdLoc,
+    uSelectedCountLoc,
+    uSelectedIdsLoc,
+    uIdToleranceLoc;
 
 function createColorTex(w, h, internalFormat, format, type) {
   const tex = gl.createTexture();
@@ -424,35 +512,57 @@ uniform sampler2D uSceneColor;
 uniform sampler2D uSelMask;
 
 uniform vec2 uTexel;        // (1/width, 1/height)
-uniform vec3 uOutlineColor; // e.g. (1,0.8,0)
+uniform vec3 uOutlineColor; // selection color
+uniform vec3 uActiveOutlineColor;
 uniform float uThickness;   // e.g. 2.0
-uniform float uSelectedId;
 uniform float uIdTolerance;
+uniform float uActiveId;
+uniform int uSelectedCount;
+uniform float uSelectedIds[16];
+
+bool idMatches(float a, float b) {
+  return abs(a - b) <= uIdTolerance;
+}
+
+float findSelectedId(float value) {
+  for (int i = 0; i < 16; i++) {
+    if (i >= uSelectedCount) break;
+    if (idMatches(value, uSelectedIds[i])) {
+      return uSelectedIds[i];
+    }
+  }
+  return -1.0;
+}
 
 void main() {
   vec4 base = texture(uSceneColor, vUV);
-  float c = texture(uSelMask, vUV).r;
+  float idValue = texture(uSelMask, vUV).r;
+  float matchedId = findSelectedId(idValue);
 
-  if (uSelectedId <= 0.0 || abs(c - uSelectedId) > uIdTolerance) {
+  if (matchedId < 0.0) {
     outColor = base;
     return;
   }
 
-  // Edge detection: if any neighbor within thickness is not selected => outline
+  bool isActive = (uActiveId > 0.0) && idMatches(idValue, uActiveId);
+
   float edge = 0.0;
   int t = int(max(1.0, uThickness));
 
-  for (int y = -6; y <= 6; y++) {        // max supported thickness here
+  for (int y = -6; y <= 6; y++) {
     for (int x = -6; x <= 6; x++) {
       if (abs(x) > t || abs(y) > t) continue;
       vec2 uv = vUV + vec2(float(x), float(y)) * uTexel;
-      float n = texture(uSelMask, uv).r;
-      if (abs(n - uSelectedId) > uIdTolerance) edge = 1.0;
+      float neighbor = texture(uSelMask, uv).r;
+      if (!idMatches(neighbor, matchedId)) {
+        edge = 1.0;
+      }
     }
   }
 
   if (edge > 0.5) {
-    outColor = vec4(uOutlineColor, 1.0);
+    vec3 color = isActive ? uActiveOutlineColor : uOutlineColor;
+    outColor = vec4(color, 1.0);
   } else {
     outColor = base;
   }
@@ -486,8 +596,11 @@ uSceneColorLoc = gl.getUniformLocation(outlineProg, "uSceneColor");
 uSelMaskLoc = gl.getUniformLocation(outlineProg, "uSelMask");
 uTexelLoc = gl.getUniformLocation(outlineProg, "uTexel");
 uOutlineColorLoc = gl.getUniformLocation(outlineProg, "uOutlineColor");
+uActiveOutlineColorLoc = gl.getUniformLocation(outlineProg, "uActiveOutlineColor");
 uThicknessLoc = gl.getUniformLocation(outlineProg, "uThickness");
-uSelectedIdLoc = gl.getUniformLocation(outlineProg, "uSelectedId");
+uActiveIdLoc = gl.getUniformLocation(outlineProg, "uActiveId");
+uSelectedCountLoc = gl.getUniformLocation(outlineProg, "uSelectedCount");
+uSelectedIdsLoc = gl.getUniformLocation(outlineProg, "uSelectedIds");
 uIdToleranceLoc = gl.getUniformLocation(outlineProg, "uIdTolerance");
 
 
@@ -571,9 +684,9 @@ const gridVertexCount = positions.length / 3;
 ============================ */
 
 const camera = new OrbitCamera();
-const ui = new UIOptions();
-gizmoMode = ui.gizmoMode;
 const sdfRenderer = new SDFRenderer(gl);
+ui = new UIOptions();
+ui.setGizmoMode(gizmoMode);
 
 // UI Callbacks for the light rotation.
 ui.onLightRotate = (deg) => {
@@ -581,35 +694,15 @@ ui.onLightRotate = (deg) => {
 };
 
 ui.onGizmoModeChange = (mode) => {
-  gizmoMode = mode;
-  gizmoDragging = false;
-  gizmoActiveAxis = -1;
-  gizmoDragType = null;
+  changeGizmoMode(mode, "ui");
 };
 
 ui.onDeleteShape = () => {
-  deleteSelectedShape();
+  deleteSelectedShapes();
 };
 
 ui.onAddShape = (typeName) => {
-  switch (typeName) {
-    case "box":
-      addShapeAtOrigin(SHAPE_BOX);
-      break;
-    case "cylinder":
-      addShapeAtOrigin(SHAPE_CYL);
-      break;
-    case "capsule":
-      addShapeAtOrigin(SHAPE_CAPSULE);
-      break;
-    case "torus":
-      addShapeAtOrigin(SHAPE_TORUS);
-      break;
-    case "sphere":
-    default:
-      addShapeAtOrigin(SHAPE_SPHERE);
-      break;
-  }
+  addShapeByName(typeName);
 };
 
 // Callback for box rounding updates
@@ -749,16 +842,39 @@ const rotationCurrentVec = vec3.create();
 const rotationStartQuat = quat.create();
 const rotationDeltaQuat = quat.create();
 
-function deleteSelectedShape() {
-  if (selectedShape === -1) return;
+function deleteSelectedShapes() {
+  if (selectedShapes.length === 0) return;
 
-  // Remove shape from the scene
-  shapes.splice(selectedShape, 1);
+  const toRemove = [...selectedShapes].sort((a, b) => b - a);
+  toRemove.forEach(idx => {
+    if (idx >= 0 && idx < shapes.length) {
+      shapes.splice(idx, 1);
+    }
+  });
 
-  applySelection(-1);
-
-  // Push updated shape list to renderer
+  clearSelection();
   uploadShapes();
+}
+
+function duplicateActiveShape() {
+  if (selectedShape === -1) return;
+  if (shapes.length >= MAX_SHAPES) {
+    console.warn("Max shape count reached");
+    return;
+  }
+
+  const original = shapes[selectedShape];
+  const clone = {
+    type: original.type,
+    pos: [...original.pos],
+    params: [...original.params],
+    rotation: quat.clone(original.rotation),
+    scale: original.scale ? [...original.scale] : [1, 1, 1],
+  };
+
+  shapes.push(clone);
+  uploadShapes();
+  applySelection(shapes.length - 1);
 }
 
 
@@ -957,7 +1073,7 @@ function handleRotationDrag(rayOrigin, rayDir) {
   vec3.copy(rotationStartVec, rotationCurrentVec);
 }
 
-function queuePickRequest(clientX, clientY) {
+function queuePickRequest(clientX, clientY, options = {}) {
   const rect = canvas.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) return;
 
@@ -965,12 +1081,19 @@ function queuePickRequest(clientX, clientY) {
   const normY = (clientY - rect.top) / rect.height;
   if (normX < 0 || normX > 1 || normY < 0 || normY > 1) return;
 
-  const pixelX = Math.floor(normX * canvas.width);
-  const pixelY = Math.floor(normY * canvas.height);
+  const pixelX = Math.min(
+    canvas.width - 1,
+    Math.max(0, Math.floor(normX * canvas.width))
+  );
+  const pixelYTop = Math.min(
+    canvas.height - 1,
+    Math.max(0, Math.floor(normY * canvas.height))
+  );
 
   pendingPick = {
     x: pixelX,
-    y: Math.floor(canvas.height - pixelY - 1),
+    y: canvas.height - 1 - pixelYTop,
+    additive: !!options.additive,
   };
 }
 
@@ -988,16 +1111,23 @@ function processPendingPick() {
     gl.UNSIGNED_BYTE,
     pickPixel
   );
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.readBuffer(gl.COLOR_ATTACHMENT0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
   const value = pickPixel[0];
+  const additive = pendingPick.additive;
   pendingPick = null;
   const shapeIndex = value > 0 ? value - 1 : -1;
-  applySelection(shapeIndex);
-}
 
-let activeAxis = null; // "x" | "y" | "z" | null
+  if (shapeIndex === -1) {
+    if (!additive) {
+      clearSelection();
+    }
+    return;
+  }
+
+  applySelection(shapeIndex, { additive });
+}
 
 //This converts the keyboard input into axis index
 function axisCharToIndex(axis) {
@@ -1018,26 +1148,34 @@ window.addEventListener("keydown", (e) => {
 
   const key = e.key.toLowerCase();
 
+  if (e.shiftKey && key === "a") {
+    const typeName = ui ? ui.getSelectedShapeType() : "sphere";
+    addShapeByName(typeName);
+    return;
+  }
+
+  if (e.shiftKey && key === "d") {
+    duplicateActiveShape();
+    return;
+  }
+
   // -----------------------
   // Transform modes
   // -----------------------
   if (key === "g") {
-    gizmoMode = "translate";
-    activeAxis = null;
+    changeGizmoMode("translate");
     console.log("Mode: translate");
     return;
   }
 
   if (key === "r") {
-    gizmoMode = "rotate";
-    activeAxis = null;
+    changeGizmoMode("rotate");
     console.log("Mode: rotate");
     return;
   }
 
   if (key === "s") {
-    gizmoMode = "scale";
-    activeAxis = null;
+    changeGizmoMode("scale");
     console.log("Mode: scale");
     return;
   }
@@ -1045,19 +1183,17 @@ window.addEventListener("keydown", (e) => {
   // --------------------------------
   // Delete (X). This is placed before x, so that this wins before axis constraint.
   // ---------------------------------
-  if (key === "x" && gizmoMode === "select" && selectedShape !== -1) {
-    deleteSelectedShape();
+  if (key === "x" && gizmoMode === "select" && selectedShapes.length > 0) {
+    deleteSelectedShapes();
     return;
   }
 
-
   // -----------------------
-  // Axis constraints HERE!!!!!! This is pressed after the g,r,s, to immediately enter axis selection, like in blender.
+  // Axis constraints
   // -----------------------
   if (!gizmoMode) return;
 
   if (key === "x" || key === "y" || key === "z") {
-    // toggle behavior like Blender
     if (activeAxis === key) {
       activeAxis = null;
       gizmoActiveAxis = -1;
@@ -1069,16 +1205,16 @@ window.addEventListener("keydown", (e) => {
     console.log(`Axis constraint: ${activeAxis.toUpperCase()}`);
 
     beginKeyboardGizmoDrag();
+    return;
   }
+
   if (key === "escape") {
-    gizmoMode = "select";
+    changeGizmoMode("select");
     gizmoDragging = false;
     gizmoActiveAxis = -1;
     gizmoDragType = null;
     activeAxis = null;
-
     console.log("Mode: select");
-    return;
   }
 });
 
@@ -1122,7 +1258,7 @@ canvas.addEventListener("mousedown", e => {
     gizmoActiveAxis = -1;
     gizmoDragging = false;
     gizmoDragType = null;
-    queuePickRequest(e.clientX, e.clientY);
+    queuePickRequest(e.clientX, e.clientY, { additive: e.shiftKey });
     return;
   }
 
@@ -1213,6 +1349,7 @@ const shapeTypeData  = new Int32Array(MAX_SHAPES);
 const shapeParamData = new Float32Array(MAX_SHAPES * 4);
 const shapeRotData   = new Float32Array(MAX_SHAPES * 4);
 const shapeScaleData = new Float32Array(MAX_SHAPES * 3);
+const selectedIdArray = new Float32Array(MAX_SHAPES);
 
 
 // =========================================
@@ -1238,6 +1375,12 @@ function render() {
     shapeParamData.set(s.params, i * 4);
     shapeRotData.set(s.rotation, i * 4);
     shapeScaleData.set(s.scale, i * 3);
+  }
+
+  selectedIdArray.fill(0);
+  const selectionCount = Math.min(selectedShapes.length, MAX_SHAPES);
+  for (let i = 0; i < selectionCount; i++) {
+    selectedIdArray[i] = (selectedShapes[i] + 1) / SHAPE_ID_SCALE;
   }
 
   // ---------------------------------
@@ -1333,12 +1476,15 @@ function render() {
   gl.uniform1i(uSelMaskLoc, 1);
 
   gl.uniform2f(uTexelLoc, 1.0 / canvas.width, 1.0 / canvas.height);
-  gl.uniform3f(uOutlineColorLoc, 1.0, 0.8, 0.0);
+  gl.uniform3f(uOutlineColorLoc, SECONDARY_OUTLINE_COLOR[0], SECONDARY_OUTLINE_COLOR[1], SECONDARY_OUTLINE_COLOR[2]);
+  gl.uniform3f(uActiveOutlineColorLoc, ACTIVE_OUTLINE_COLOR[0], ACTIVE_OUTLINE_COLOR[1], ACTIVE_OUTLINE_COLOR[2]);
   gl.uniform1f(uThicknessLoc, 2.0);
-  const selectedIdValue = selectedShape >= 0
+  const activeIdValue = selectedShape >= 0
     ? (selectedShape + 1) / SHAPE_ID_SCALE
     : 0.0;
-  gl.uniform1f(uSelectedIdLoc, selectedIdValue);
+  gl.uniform1f(uActiveIdLoc, activeIdValue);
+  gl.uniform1i(uSelectedCountLoc, selectionCount);
+  gl.uniform1fv(uSelectedIdsLoc, selectedIdArray);
   gl.uniform1f(uIdToleranceLoc, SHAPE_ID_TOLERANCE);
 
   gl.drawArrays(gl.TRIANGLES, 0, 3);
