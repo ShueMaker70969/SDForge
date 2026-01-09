@@ -38,6 +38,8 @@ const GIZMO_AXIS_COLORS = [
   [0, 0, 1], // Y
   [0, 1, 0], // Z
 ];
+const SHAPE_ID_SCALE = 255;
+const SHAPE_ID_TOLERANCE = 0.25 / SHAPE_ID_SCALE;
 
 let gizmoMode = "select";
 
@@ -132,39 +134,39 @@ function computeMouseRay(mouseX, mouseY) {
   };
 }
 
-//Function used to select shape when clicking
-function pickShape(rayOrigin, rayDir) {
-  let bestT = Infinity;
-  let hitIndex = -1;
+let selectedShape = -1;
+let pendingPick = null;
+const pickPixel = new Uint8Array(4);
 
-  for (let i = 0; i < shapes.length; i++) {
-    const s = shapes[i];
-    const radius = shapeBoundingRadius(s);
-
-    // Ray–sphere intersection
-    const oc = [
-      rayOrigin[0] - s.pos[0],
-      rayOrigin[1] - s.pos[1],
-      rayOrigin[2] - s.pos[2],
-    ];
-
-    const b = oc[0]*rayDir[0] + oc[1]*rayDir[1] + oc[2]*rayDir[2];
-    const c = oc[0]*oc[0] + oc[1]*oc[1] + oc[2]*oc[2] - radius*radius;
-    const h = b*b - c;
-
-    if (h < 0) continue;
-
-    const t = -b - Math.sqrt(h);
-    if (t > 0 && t < bestT) {
-      bestT = t;
-      hitIndex = i;
-    }
+function updateSelectionUI() {
+  if (selectedShape !== -1) {
+    ui.updateRoundingControl(selectedShape, shapes[selectedShape]);
+  } else {
+    ui.updateRoundingControl(-1, null);
   }
-
-  return hitIndex;
 }
 
-let selectedShape = -1;
+function applySelection(newIndex) {
+  let clamped = newIndex;
+  if (clamped < 0 || clamped >= shapes.length) {
+    clamped = -1;
+  }
+
+  if (selectedShape === clamped) {
+    updateSelectionUI();
+    return;
+  }
+
+  selectedShape = clamped;
+  console.log("Selected shape:", selectedShape);
+
+  gizmoMode = "select";
+  gizmoDragging = false;
+  gizmoActiveAxis = -1;
+  gizmoDragType = null;
+  activeAxis = null;
+  updateSelectionUI();
+}
 
 
 //this function uploads the defined sdfs to the scene through the "shapes" list
@@ -326,7 +328,7 @@ let selMaskTex = null;
 let sceneDepthRB = null;
 
 let outlineProg = null;
-let uSceneColorLoc, uSelMaskLoc, uTexelLoc, uOutlineColorLoc, uThicknessLoc;
+let uSceneColorLoc, uSelMaskLoc, uTexelLoc, uOutlineColorLoc, uThicknessLoc, uSelectedIdLoc, uIdToleranceLoc;
 
 function createColorTex(w, h, internalFormat, format, type) {
   const tex = gl.createTexture();
@@ -411,13 +413,14 @@ uniform sampler2D uSelMask;
 uniform vec2 uTexel;        // (1/width, 1/height)
 uniform vec3 uOutlineColor; // e.g. (1,0.8,0)
 uniform float uThickness;   // e.g. 2.0
+uniform float uSelectedId;
+uniform float uIdTolerance;
 
 void main() {
   vec4 base = texture(uSceneColor, vUV);
   float c = texture(uSelMask, vUV).r;
 
-  // If not selected pixel, just show base color (no outline)
-  if (c < 0.5) {
+  if (uSelectedId <= 0.0 || abs(c - uSelectedId) > uIdTolerance) {
     outColor = base;
     return;
   }
@@ -431,7 +434,7 @@ void main() {
       if (abs(x) > t || abs(y) > t) continue;
       vec2 uv = vUV + vec2(float(x), float(y)) * uTexel;
       float n = texture(uSelMask, uv).r;
-      if (n < 0.5) edge = 1.0;
+      if (abs(n - uSelectedId) > uIdTolerance) edge = 1.0;
     }
   }
 
@@ -471,6 +474,8 @@ uSelMaskLoc = gl.getUniformLocation(outlineProg, "uSelMask");
 uTexelLoc = gl.getUniformLocation(outlineProg, "uTexel");
 uOutlineColorLoc = gl.getUniformLocation(outlineProg, "uOutlineColor");
 uThicknessLoc = gl.getUniformLocation(outlineProg, "uThickness");
+uSelectedIdLoc = gl.getUniformLocation(outlineProg, "uSelectedId");
+uIdToleranceLoc = gl.getUniformLocation(outlineProg, "uIdTolerance");
 
 
 const program = gl.createProgram();
@@ -662,17 +667,10 @@ function deleteSelectedShape() {
   // Remove shape from the scene
   shapes.splice(selectedShape, 1);
 
-  // Clear selection (indices shift after splice)
-  selectedShape = -1;
-  gizmoActiveAxis = -1;
-  gizmoDragging = false;
-  gizmoDragType = null;
+  applySelection(-1);
 
   // Push updated shape list to renderer
   uploadShapes();
-
-  // Update UI (hide rounding, disable delete, etc.)
-  ui.updateRoundingControl(-1, null);
 }
 
 
@@ -871,6 +869,52 @@ function handleRotationDrag(rayOrigin, rayDir) {
   vec3.copy(rotationStartVec, rotationCurrentVec);
 }
 
+function queuePickRequest(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+
+  const normX = (clientX - rect.left) / rect.width;
+  const normY = (clientY - rect.top) / rect.height;
+  if (normX < 0 || normX > 1 || normY < 0 || normY > 1) return;
+
+  const pixelX = Math.min(
+    canvas.width - 1,
+    Math.max(0, Math.floor(normX * canvas.width))
+  );
+  const pixelYTop = Math.min(
+    canvas.height - 1,
+    Math.max(0, Math.floor(normY * canvas.height))
+  );
+
+  pendingPick = {
+    x: pixelX,
+    y: canvas.height - 1 - pixelYTop,
+  };
+}
+
+function processPendingPick() {
+  if (!pendingPick) return;
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, outlineFBO);
+  gl.readBuffer(gl.COLOR_ATTACHMENT1);
+  gl.readPixels(
+    pendingPick.x,
+    pendingPick.y,
+    1,
+    1,
+    gl.RED,
+    gl.UNSIGNED_BYTE,
+    pickPixel
+  );
+  gl.readBuffer(gl.COLOR_ATTACHMENT0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+  const value = pickPixel[0];
+  pendingPick = null;
+  const shapeIndex = value > 0 ? value - 1 : -1;
+  applySelection(shapeIndex);
+}
+
 let activeAxis = null; // "x" | "y" | "z" | null
 
 //This converts the keyboard input into axis index
@@ -991,25 +1035,7 @@ canvas.addEventListener("mousedown", e => {
     gizmoActiveAxis = -1;
     gizmoDragging = false;
     gizmoDragType = null;
-    const newSelection = pickShape(ray.origin, ray.dir);
-
-    if (newSelection !== selectedShape) {
-      selectedShape = newSelection;
-
-      gizmoMode = "select";
-      gizmoDragging = false;
-      gizmoActiveAxis = -1;
-      gizmoDragType = null;
-      activeAxis = null;
-    }
-
-    console.log("Selected shape:", selectedShape);
-    // Update rounding control value
-    if (selectedShape !== -1) {
-      ui.updateRoundingControl(selectedShape, shapes[selectedShape]);
-    } else {
-      ui.updateRoundingControl(-1, null);
-    }
+    queuePickRequest(e.clientX, e.clientY);
     return;
   }
 
@@ -1178,7 +1204,6 @@ function render() {
       params: shapeParamData,
       scales: shapeScaleData,
     },
-    selectedShape,
     lightDir,
   });
 
@@ -1223,6 +1248,11 @@ function render() {
   gl.uniform2f(uTexelLoc, 1.0 / canvas.width, 1.0 / canvas.height);
   gl.uniform3f(uOutlineColorLoc, 1.0, 0.8, 0.0);
   gl.uniform1f(uThicknessLoc, 2.0);
+  const selectedIdValue = selectedShape >= 0
+    ? (selectedShape + 1) / SHAPE_ID_SCALE
+    : 0.0;
+  gl.uniform1f(uSelectedIdLoc, selectedIdValue);
+  gl.uniform1f(uIdToleranceLoc, SHAPE_ID_TOLERANCE);
 
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
@@ -1238,6 +1268,7 @@ function render() {
     drawGizmo(shapes[selectedShape].pos, gizmoActiveAxis);
   }
 
+  processPendingPick();
   requestAnimationFrame(render);
 }
 
