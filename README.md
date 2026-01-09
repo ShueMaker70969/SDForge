@@ -23,3 +23,16 @@ To run the demo, access [Live Demo](https://shuemaker70969.github.io/SDForge/)
 | Input | Action |
 |------|-------|
 | Left click | Select shape |
+| Shift + Left click | Select multiple shapes |
+
+### Shortcut Keys
+|------|-------|
+| Shift + a | Add shape to scene |
+| x | delete selected shape |
+| Shift + a | Add shape to scene |
+| Shift + d | Duplicate active shape |
+| g | Enter translation mode |
+| r | Enter rotation mode |
+| s | Enter scale mode |
+| During transformation mode (x | y | z) | Transform in selected axis |
+| escape | Exit transformation mode |
