@@ -3,21 +3,31 @@ import { mat4, vec3, vec4, quat }
 import { OrbitCamera } from "./camera.js";
 import { UIOptions } from "./ui_options.js";
 import { SDFRenderer } from "./sdf_renderer.js";
+import {
+  shapes,
+  selectedShape,
+  selectedShapes,
+
+  MAX_SHAPES,
+  SHAPE_BOX,
+  SHAPE_SPHERE,
+  SHAPE_CYL,
+  SHAPE_CAPSULE,
+  SHAPE_TORUS,
+
+  addShapeByName,
+  deleteSelectedShapes,
+  duplicateActiveShape,
+  applySelection,
+  clearSelection,
+  buildShapeUniforms,
+  setOnSelectionChanged,
+} from "./scene.js";
 
 //These controls the light direction in the scene
 const lightBaseDir = vec3.normalize([], [0.5, 1.0, 0.3]);
 let lightAngle = 0.0; // radians
 const lightDir = vec3.create();
-
-//Max number of shapes that can exist in the scene
-const MAX_SHAPES = 16;
-
-//THESE CONSTANTS ARE IMPORTANT. They define the shape types used in the SDF system.
-const SHAPE_SPHERE  = 0;
-const SHAPE_BOX     = 1;
-const SHAPE_CYL     = 2;
-const SHAPE_CAPSULE = 3;
-const SHAPE_TORUS   = 4;
 
 //what other shapes could be added? triangle, polygon, cone...
 
@@ -25,10 +35,6 @@ let invView = mat4.create();
 let invProj = mat4.create();
 let ui = null;
 
-//=================================================
-//VERY IMPORTANT. Keeps track of all the shapes in the scene.
-const shapes = [];
-//=================================================
 const GIZMO_LENGTH = 1.2;
 const GIZMO_ROTATION_SEGMENTS = 64;
 const GIZMO_ROTATION_RADIUS = GIZMO_LENGTH;
@@ -47,94 +53,10 @@ const SHAPE_ID_TOLERANCE = 0.25 / SHAPE_ID_SCALE;
 let gizmoMode = "select";
 let activeAxis = null;
 
-function defaultParamsForType(type) {
-  //here, each parameter array has certain number of elements, and may mean different things depending on the shape. Cylinder uses params[2] for rounding, box uses params[3] for rounding, etc. Gotta fix this later, since it is messy and likely to cause bugs later. 
-  switch (type) {
-    case SHAPE_SPHERE:
-      return [1.0, 0, 0, 0]; // radius
-    case SHAPE_BOX:
-      return [0.75, 0.75, 0.75, 0.0]; // half-extents
-    case SHAPE_CYL:
-      return [0.7, 1.0, 0, 0.0]; // radius, half-height
-    case SHAPE_CAPSULE:
-      return [0.4, 1.0, 0, 0]; // radius, half-segment length
-    case SHAPE_TORUS:
-      return [1.0, 0.25, 0, 0]; // major radius, minor radius
-    default:
-      return [1.0, 0, 0, 0];
-  }
-}
-
-function addShapeAtOrigin(type) {
-  if (shapes.length >= MAX_SHAPES) {
-    console.warn("Max shape count reached");
-    return;
-  }
-  const newIndex = shapes.length;
-  shapes.push({
-    type,
-    pos: [0, 1, 0],
-    params: defaultParamsForType(type),
-    rotation: quat.create(),
-    scale: [1, 1, 1],
-  });
-
-  uploadShapes();
-  applySelection(newIndex);
-  return newIndex;
-}
-
-function addShapeByName(typeName) {
-  switch (typeName) {
-    case "box":
-      addShapeAtOrigin(SHAPE_BOX);
-      break;
-    case "cylinder":
-      addShapeAtOrigin(SHAPE_CYL);
-      break;
-    case "capsule":
-      addShapeAtOrigin(SHAPE_CAPSULE);
-      break;
-    case "torus":
-      addShapeAtOrigin(SHAPE_TORUS);
-      break;
-    case "sphere":
-    default:
-      addShapeAtOrigin(SHAPE_SPHERE);
-      break;
-  }
-}
-
-function shapeBoundingRadius(shape) {
-  const p = shape.params;
-  const rounding = p[3] || 0; //if p[3] is missing use 0
-  
-  switch (shape.type) {
-    case SHAPE_SPHERE:
-      return p[0];
-    case SHAPE_BOX:
-      const boxRounding = p[3] || 0;
-      return Math.hypot(p[0], p[1], p[2]) + boxRounding;
-    case SHAPE_CYL:
-      const cylRounding = p[2] || 0;
-      return Math.hypot(p[0], p[1]) + cylRounding; 
-    case SHAPE_CAPSULE:
-      return p[0] + p[1]; //rounding not needed for capsule? 
-    case SHAPE_TORUS:
-      return p[0] + p[1];
-    default:
-      return 1.0;
-  }
-}
-
 const canvas = document.getElementById("glcanvas");
 
 const gl = canvas.getContext("webgl2");
 if (!gl) alert("WebGL2 not supported");
-
-function addSphereAtOrigin() {
-  addShapeAtOrigin(SHAPE_SPHERE);
-}
 
 function computeMouseRay(mouseX, mouseY) {
   // 1. Convert mouse to NDC
@@ -161,82 +83,10 @@ function computeMouseRay(mouseX, mouseY) {
   };
 }
 
-let selectedShape = -1;
-const selectedShapes = [];
+
 let pendingPick = null;
 const pickPixel = new Uint8Array(4);
 
-function isShapeSelected(index) {
-  return selectedShapes.includes(index);
-}
-
-function updateSelectionUI() {
-  if (!ui) return;
-  if (selectedShape !== -1 && shapes[selectedShape]) {
-    ui.updateRoundingControl(selectedShape, shapes[selectedShape]);
-  } else {
-    ui.updateRoundingControl(-1, null);
-  }
-}
-
-function clearSelection(updateUI = true) {
-  selectedShapes.length = 0;
-  selectedShape = -1;
-  changeGizmoMode("select");
-  if (updateUI) updateSelectionUI();
-}
-
-function addToSelection(index) {
-  if (index < 0) return;
-  const existingIdx = selectedShapes.indexOf(index);
-  if (existingIdx !== -1) {
-    selectedShapes.splice(existingIdx, 1);
-  }
-  selectedShapes.push(index);
-  selectedShape = index;
-}
-
-function removeFromSelection(index) {
-  const idx = selectedShapes.indexOf(index);
-  if (idx !== -1) {
-    selectedShapes.splice(idx, 1);
-  }
-  if (selectedShapes.length === 0) {
-    selectedShape = -1;
-  } else if (selectedShape === index) {
-    selectedShape = selectedShapes[selectedShapes.length - 1];
-  }
-}
-
-function applySelection(index, options = {}) {
-  const additive = !!options.additive;
-  let targetIndex = index;
-  if (targetIndex >= shapes.length) {
-    targetIndex = -1;
-  }
-  if (targetIndex === -1) {
-    if (!additive) {
-      clearSelection();
-    }
-    return;
-  }
-
-  if (!additive) {
-    clearSelection(false);
-    addToSelection(targetIndex);
-  } else {
-    if (isShapeSelected(targetIndex)) {
-      removeFromSelection(targetIndex);
-    } else {
-      addToSelection(targetIndex);
-    }
-  }
-
-  updateSelectionUI();
-  if (!additive && selectedShape !== -1) {
-    changeGizmoMode("select");
-  }
-}
 
 function changeGizmoMode(mode, source = "code") {
   if (gizmoMode === mode) {
@@ -256,8 +106,6 @@ function changeGizmoMode(mode, source = "code") {
     ui.setGizmoMode(mode);
   }
 }
-
-
 
 //this function uploads the defined sdfs to the scene through the "shapes" list
 function uploadShapes() {
@@ -291,6 +139,16 @@ function drawGizmo(pos, activeAxis = -1) {
     drawTranslationGizmo(pos, activeAxis);
   }
 }
+
+setOnSelectionChanged((active, all) => {
+  if (!ui) return;
+
+  if (active !== -1 && shapes[active]) {
+    ui.updateRoundingControl(active, shapes[active]);
+  } else {
+    ui.updateRoundingControl(-1, null);
+  }
+});
 
 function drawTranslationGizmo(pos, activeAxis = -1) {
   const L = GIZMO_LENGTH; // gizmo axis length
@@ -483,7 +341,6 @@ function createOutlineFBO() {
   gl.bindRenderbuffer(gl.RENDERBUFFER, null);
 }
 createOutlineFBO();
-
 
 const OUTLINE_VS = `#version 300 es
 precision highp float;
@@ -842,41 +699,6 @@ const rotationCurrentVec = vec3.create();
 const rotationStartQuat = quat.create();
 const rotationDeltaQuat = quat.create();
 
-function deleteSelectedShapes() {
-  if (selectedShapes.length === 0) return;
-
-  const toRemove = [...selectedShapes].sort((a, b) => b - a);
-  toRemove.forEach(idx => {
-    if (idx >= 0 && idx < shapes.length) {
-      shapes.splice(idx, 1);
-    }
-  });
-
-  clearSelection();
-  uploadShapes();
-}
-
-function duplicateActiveShape() {
-  if (selectedShape === -1) return;
-  if (shapes.length >= MAX_SHAPES) {
-    console.warn("Max shape count reached");
-    return;
-  }
-
-  const original = shapes[selectedShape];
-  const clone = {
-    type: original.type,
-    pos: [...original.pos],
-    params: [...original.params],
-    rotation: quat.clone(original.rotation),
-    scale: original.scale ? [...original.scale] : [1, 1, 1],
-  };
-
-  shapes.push(clone);
-  uploadShapes();
-  applySelection(shapes.length - 1);
-}
-
 
 function closestPointParamsOnLines(p0, d0, p1, d1) {
   const r = vec3.sub([], p0, p1);
@@ -1231,6 +1053,10 @@ canvas.addEventListener("mousedown", e => {
       // IMPORTANT: do NOT select/deselect
       return;
     }
+    // If clicking while in a transform mode, always exit to select
+    if (gizmoMode !== "select") {
+      changeGizmoMode("select");
+    }
 
     if (selectedShape !== -1 && gizmoMode !== "select") {
       const shapePos = shapes[selectedShape].pos;
@@ -1339,8 +1165,6 @@ canvas.addEventListener("wheel", e => {
 
 canvas.addEventListener("contextmenu", e => e.preventDefault());
 
-
-
 const uView = gl.getUniformLocation(program, "uView");
 const uProj = gl.getUniformLocation(program, "uProj");
 
@@ -1350,7 +1174,6 @@ const shapeParamData = new Float32Array(MAX_SHAPES * 4);
 const shapeRotData   = new Float32Array(MAX_SHAPES * 4);
 const shapeScaleData = new Float32Array(MAX_SHAPES * 3);
 const selectedIdArray = new Float32Array(MAX_SHAPES);
-
 
 // =========================================
 // RENDER LOOP HEREEEE
@@ -1368,14 +1191,13 @@ function render() {
   // ---------------------------------
   // Build shape uniform data
   // ---------------------------------
-  for (let i = 0; i < shapes.length; i++) {
-    const s = shapes[i];
-    shapePosData.set(s.pos, i * 3);
-    shapeTypeData[i] = s.type;
-    shapeParamData.set(s.params, i * 4);
-    shapeRotData.set(s.rotation, i * 4);
-    shapeScaleData.set(s.scale, i * 3);
-  }
+  buildShapeUniforms(
+    shapePosData,
+    shapeTypeData,
+    shapeParamData,
+    shapeRotData,
+    shapeScaleData
+  );
 
   selectedIdArray.fill(0);
   const selectionCount = Math.min(selectedShapes.length, MAX_SHAPES);
