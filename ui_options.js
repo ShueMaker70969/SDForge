@@ -9,6 +9,7 @@ export class UIOptions {
     // callbacks (assigned from outside)
     this.onAddShape = null;
     this.onUpdateBoxRounding = null; //box rounding updates
+    this.onUpdateShapeColor = null; //shape color updates
     this.onDeleteShape = null;
     this.onGizmoModeChange = null;
     this.onLightRotate = null;
@@ -195,12 +196,55 @@ export class UIOptions {
     
     this.deleteShapeBtn = deleteShapeBtn;
 
+    // ---- Color Picker Control ----
+    const colorContainer = document.createElement("div");
+    colorContainer.style.display = "none"; // Hidden by default, shown when shape is selected
+    colorContainer.style.marginTop = "10px";
+
+    const colorLabel = document.createElement("label");
+    colorLabel.textContent = "Color: ";
+    colorLabel.style.display = "block";
+    colorLabel.style.marginBottom = "8px";
+
+    // Color input - HTML5 color picker
+    const colorInput = document.createElement("input");
+    colorInput.type = "color";
+    colorInput.value = "#cccccc"; // Default light grey
+    colorInput.style.width = "60px";
+    colorInput.style.height = "30px";
+    colorInput.style.border = "1px solid #ccc";
+    colorInput.style.borderRadius = "4px";
+    colorInput.style.cursor = "pointer";
+
+    // Helper function to convert hex to RGB [0-1]
+    function hexToRgb(hex) {
+      const r = parseInt(hex.slice(1, 3), 16) / 255;
+      const g = parseInt(hex.slice(3, 5), 16) / 255;
+      const b = parseInt(hex.slice(5, 7), 16) / 255;
+      return [r, g, b];
+    }
+
+    colorInput.addEventListener("input", (e) => {
+      const rgb = hexToRgb(e.target.value);
+      if (this.onUpdateShapeColor) {
+        this.onUpdateShapeColor(rgb);
+      }
+    });
+
+    colorLabel.appendChild(colorInput);
+    colorContainer.appendChild(colorLabel);
+
+    // Store references
+    this.colorContainer = colorContainer;
+    this.colorInput = colorInput;
+
     leftPanel.append(
       invertLabel,
       gizmoLabel,
       document.createElement("hr"),
       addRow,
-      roundingContainer
+      roundingContainer,
+      colorContainer
     );
 
     document.body.appendChild(leftPanel);
@@ -214,6 +258,16 @@ export class UIOptions {
     //NOTE!!! This is here, as this is called whenever selection changes. Might have rename updateRoundingControl later to something more generic.
     if (this.deleteShapeBtn) {
       this.deleteShapeBtn.disabled = (selectedShape === -1);
+    }
+    
+    // Update color picker
+    if (selectedShape !== -1 && shape && shape.color) {
+      this.colorContainer.style.display = "block";
+      const rgb = shape.color;
+      const hex = `#${Math.round(rgb[0] * 255).toString(16).padStart(2, '0')}${Math.round(rgb[1] * 255).toString(16).padStart(2, '0')}${Math.round(rgb[2] * 255).toString(16).padStart(2, '0')}`;
+      this.colorInput.value = hex;
+    } else {
+      this.colorContainer.style.display = "none";
     }
     if (selectedShape !== -1 && shape && (shape.type === 1 || shape.type === 2)) { // SHAPE_BOX = 1, SHAPE_CYL = 2
       this.roundingContainer.style.display = "block";

@@ -69,6 +69,7 @@ export class SDFRenderer {
     this.uShapeParams= gl.getUniformLocation(this.program, "uShapeParams");
     this.uShapeRot   = gl.getUniformLocation(this.program, "uShapeRot");
     this.uShapeScale = gl.getUniformLocation(this.program, "uShapeScale");
+    this.uShapeColor = gl.getUniformLocation(this.program, "uShapeColor");
   }
   setShapes({ count, positions, rotations, types, params, scales }) {
     const gl = this.gl;
@@ -106,6 +107,7 @@ export class SDFRenderer {
     gl.uniform1iv(this.uShapeType, shapeData.types);
     gl.uniform4fv(this.uShapeParams, shapeData.params);
     gl.uniform3fv(this.uShapeScale, shapeData.scales);
+    gl.uniform3fv(this.uShapeColor, shapeData.colors);
 
     gl.drawBuffers([
       gl.COLOR_ATTACHMENT0,

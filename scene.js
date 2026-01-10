@@ -48,6 +48,11 @@ function defaultParamsForType(type) {
   }
 }
 
+function defaultColorForType(type) {
+  // Default to light grey/white for all shapes (RGB values 0-1)
+  return [0.8, 0.8, 0.8]; // Light grey
+}
+
 /* =================================================
    Shape creation
 ================================================= */
@@ -66,6 +71,7 @@ function addShapeAtOrigin(type) {
     params: defaultParamsForType(type),
     rotation: quat.create(),
     scale: [1, 1, 1],
+    color: defaultColorForType(type),
   });
 
   return index;
@@ -189,6 +195,7 @@ export function duplicateActiveShape() {
     params: [...src.params],
     rotation: quat.clone(src.rotation),
     scale: [...src.scale],
+    color: [...src.color],
   });
 
   const newIndex = shapes.length - 1;
@@ -210,7 +217,8 @@ export function buildShapeUniforms(
   typeOut,
   paramOut,
   rotOut,
-  scaleOut
+  scaleOut,
+  colorOut
 ) {
   for (let i = 0; i < shapes.length; i++) {
     const s = shapes[i];
@@ -219,6 +227,7 @@ export function buildShapeUniforms(
     paramOut.set(s.params, i * 4);
     rotOut.set(s.rotation, i * 4);
     scaleOut.set(s.scale, i * 3);
+    colorOut.set(s.color || [0.8, 0.8, 0.8], i * 3); // Default to gray if color missing
   }
 }
 
