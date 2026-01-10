@@ -30,6 +30,7 @@ uniform vec4 uShapeRot[MAX_SHAPES];
 uniform int  uShapeType[MAX_SHAPES];
 uniform vec4 uShapeParams[MAX_SHAPES];
 uniform vec3 uShapeScale[MAX_SHAPES];
+uniform vec3 uShapeColor[MAX_SHAPES];
 
 // ---------------- SDF ----------------
 float sdSphere(vec3 p, float r) {
@@ -156,7 +157,14 @@ void main() {
 
   vec3 lightDir = normalize(uLightDir);
   float diff = max(dot(normal, lightDir), 0.0);
-  vec3 baseColor = vec3(diff);
+  
+  // Get shape color, default to white if out of bounds
+  vec3 shapeColor = (hitShape >= 0 && hitShape < uShapeCount) 
+    ? uShapeColor[hitShape] 
+    : vec3(0.8, 0.8, 0.8);
+  
+  // Apply lighting to shape color (ambient + diffuse)
+  vec3 baseColor = shapeColor * (0.3 + 0.7 * diff);
 
   vec3 col = baseColor;
 

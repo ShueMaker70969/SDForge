@@ -563,6 +563,14 @@ ui.onAddShape = (typeName) => {
 };
 
 // Callback for box rounding updates
+// Callback for color updates
+ui.onUpdateShapeColor = (color) => {
+  if (selectedShape !== -1 && shapes[selectedShape]) {
+    shapes[selectedShape].color = color;
+    // Trigger re-render by calling buildShapeUniforms (it's called in render loop)
+  }
+};
+
 ui.onUpdateBoxRounding = (rounding) => {
   if (selectedShape !== -1 && shapes[selectedShape]) {
     const shape = shapes[selectedShape];
@@ -1173,6 +1181,7 @@ const shapeTypeData  = new Int32Array(MAX_SHAPES);
 const shapeParamData = new Float32Array(MAX_SHAPES * 4);
 const shapeRotData   = new Float32Array(MAX_SHAPES * 4);
 const shapeScaleData = new Float32Array(MAX_SHAPES * 3);
+const shapeColorData = new Float32Array(MAX_SHAPES * 3);
 const selectedIdArray = new Float32Array(MAX_SHAPES);
 
 // =========================================
@@ -1196,7 +1205,8 @@ function render() {
     shapeTypeData,
     shapeParamData,
     shapeRotData,
-    shapeScaleData
+    shapeScaleData,
+    shapeColorData
   );
 
   selectedIdArray.fill(0);
@@ -1255,6 +1265,7 @@ function render() {
       types: shapeTypeData,
       params: shapeParamData,
       scales: shapeScaleData,
+      colors: shapeColorData,
     },
     lightDir,
   });
