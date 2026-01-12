@@ -70,15 +70,8 @@ export class SDFRenderer {
     this.uShapeRot   = gl.getUniformLocation(this.program, "uShapeRot");
     this.uShapeScale = gl.getUniformLocation(this.program, "uShapeScale");
     this.uShapeColor = gl.getUniformLocation(this.program, "uShapeColor");
-    
-    // -----------------------------------------------------------
-    // 1. We open a new channel for "Operations" (Add/Sub/Intersect)
-    // -----------------------------------------------------------
-    this.uShapeOp    = gl.getUniformLocation(this.program, "uShapeOp"); // <--- ADDED THIS
   }
-
   setShapes({ count, positions, rotations, types, params, scales }) {
-    // This method seems unused in the draw loop below, but kept for safety.
     const gl = this.gl;
     gl.useProgram(this.program);
 
@@ -115,13 +108,6 @@ export class SDFRenderer {
     gl.uniform4fv(this.uShapeParams, shapeData.params);
     gl.uniform3fv(this.uShapeScale, shapeData.scales);
     gl.uniform3fv(this.uShapeColor, shapeData.colors);
-
-    // -----------------------------------------------------------
-    // 2. We send the operation list (0=Union, 1=Sub, etc) to the GPU
-    // -----------------------------------------------------------
-    if (shapeData.ops) {                                           // <--- ADDED THIS CHECK
-        gl.uniform1iv(this.uShapeOp, shapeData.ops);               // <--- ADDED THIS LINE
-    }
 
     gl.drawBuffers([
       gl.COLOR_ATTACHMENT0,
