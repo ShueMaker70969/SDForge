@@ -5,6 +5,8 @@ export class UIOptions {
     this.gizmoMode = "select";
     this.shapeSelect = null;
     this.gizmoSelect = null;
+    this.sceneTextarea = null;
+    this.lightSlider = null;
 
     // callbacks (assigned from outside)
     this.onAddShape = null;
@@ -13,6 +15,9 @@ export class UIOptions {
     this.onDeleteShape = null;
     this.onGizmoModeChange = null;
     this.onLightRotate = null;
+    this.onExportScene = null;
+    this.onImportScene = null;
+    this.onApplyBoolean = null;
 
     this._buildUI();
   }
@@ -117,6 +122,47 @@ export class UIOptions {
     });
     addRow.append(addShapeBtn, shapeSelect, deleteShapeBtn);
 
+    // ---- Boolean operations ----
+    const booleanContainer = document.createElement("div");
+    booleanContainer.style.display = "flex";
+    booleanContainer.style.flexDirection = "column";
+    booleanContainer.style.gap = "0.25rem";
+    booleanContainer.style.marginTop = "0.5rem";
+
+    const booleanLabel = document.createElement("span");
+    booleanLabel.textContent = "Boolean operation";
+
+    const booleanRow = document.createElement("div");
+    booleanRow.style.display = "flex";
+    booleanRow.style.gap = "0.5rem";
+    booleanRow.style.alignItems = "center";
+
+    const booleanSelect = document.createElement("select");
+    [
+      ["union", "Union"],
+      ["difference", "Difference"],
+      ["intersect", "Intersect"],
+    ].forEach(([value, label]) => {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      booleanSelect.appendChild(opt);
+    });
+    this.booleanSelect = booleanSelect;
+
+    const booleanBtn = document.createElement("button");
+    booleanBtn.textContent = "Modify";
+    booleanBtn.disabled = true;
+    booleanBtn.addEventListener("click", () => {
+      if (this.onApplyBoolean) {
+        this.onApplyBoolean(booleanSelect.value);
+      }
+    });
+    this.booleanApplyBtn = booleanBtn;
+
+    booleanRow.append(booleanSelect, booleanBtn);
+    booleanContainer.append(booleanLabel, booleanRow);
+
     //light control
     // ---- Light Rotation ----
     const lightLabel = document.createElement("label");
@@ -141,6 +187,51 @@ export class UIOptions {
 
     lightLabel.appendChild(lightSlider);
     rightPanel.append(lightLabel);
+    this.lightSlider = lightSlider;
+
+    // ---- Scene import/export ----
+    const sceneIO = document.createElement("div");
+    sceneIO.style.marginTop = "1rem";
+    sceneIO.style.display = "flex";
+    sceneIO.style.flexDirection = "column";
+    sceneIO.style.gap = "0.5rem";
+
+    const sceneLabel = document.createElement("div");
+    sceneLabel.textContent = "Scene data:";
+
+    const sceneTextarea = document.createElement("textarea");
+    sceneTextarea.rows = 4;
+    sceneTextarea.placeholder = "Scene JSON";
+    sceneTextarea.style.width = "240px";
+    sceneTextarea.style.resize = "vertical";
+    this.sceneTextarea = sceneTextarea;
+
+    const sceneButtons = document.createElement("div");
+    sceneButtons.style.display = "flex";
+    sceneButtons.style.gap = "0.5rem";
+
+    const exportBtn = document.createElement("button");
+    exportBtn.textContent = "Export";
+    exportBtn.addEventListener("click", () => {
+      if (this.onExportScene) {
+        const text = this.onExportScene();
+        if (typeof text === "string") {
+          this.setSceneText(text);
+        }
+      }
+    });
+
+    const importBtn = document.createElement("button");
+    importBtn.textContent = "Import";
+    importBtn.addEventListener("click", () => {
+      if (this.onImportScene) {
+        this.onImportScene(sceneTextarea.value);
+      }
+    });
+
+    sceneButtons.append(exportBtn, importBtn);
+    sceneIO.append(sceneLabel, sceneTextarea, sceneButtons);
+    rightPanel.append(sceneIO);
 
 
     // ----  Rounding Control ----
@@ -243,6 +334,7 @@ export class UIOptions {
       gizmoLabel,
       document.createElement("hr"),
       addRow,
+      booleanContainer,
       roundingContainer,
       colorContainer
     );
@@ -314,7 +406,24 @@ export class UIOptions {
     }
   }
 
+  updateBooleanControls(selectionCount, canApply = false) {
+    if (!this.booleanApplyBtn) return;
+    this.booleanApplyBtn.disabled = !(selectionCount >= 2 && canApply);
+  }
+
   getSelectedShapeType() {
     return this.shapeSelect ? this.shapeSelect.value : "sphere";
+  }
+
+  setSceneText(text) {
+    if (this.sceneTextarea) {
+      this.sceneTextarea.value = text || "";
+    }
+  }
+
+  setLightSlider(degrees) {
+    if (this.lightSlider) {
+      this.lightSlider.value = String(degrees);
+    }
   }
 }

@@ -9,22 +9,17 @@ import {
   selectedShapes,
 
   MAX_SHAPES,
-  MAX_BOOLEAN_OPS,
   SHAPE_BOX,
   SHAPE_SPHERE,
   SHAPE_CYL,
   SHAPE_CAPSULE,
   SHAPE_TORUS,
-  BOOLEAN_OP_UNION,
-  BOOLEAN_OP_SUBTRACT,
-  BOOLEAN_OP_INTERSECT,
 
   addShapeByName,
   deleteSelectedShapes,
   duplicateActiveShape,
   applySelection,
   clearSelection,
-  applyBooleanOperation,
   buildShapeUniforms,
   setOnSelectionChanged,
   serializeScene,
@@ -56,11 +51,6 @@ const SECONDARY_OUTLINE_COLOR = [1.0, 0.8, 0.0];
 const ACTIVE_OUTLINE_COLOR = [1.0, 0.5, 0.0];
 const SHAPE_ID_SCALE = 255;
 const SHAPE_ID_TOLERANCE = 0.25 / SHAPE_ID_SCALE;
-const BOOLEAN_MODE_MAP = {
-  union: BOOLEAN_OP_UNION,
-  difference: BOOLEAN_OP_SUBTRACT,
-  intersect: BOOLEAN_OP_INTERSECT,
-};
 
 let gizmoMode = "select";
 let activeAxis = null;
@@ -195,12 +185,11 @@ function drawGizmo(pos, activeAxis = -1) {
 setOnSelectionChanged((active, all) => {
   if (!ui) return;
 
-  const shape = active !== -1 ? shapes[active] : null;
-  ui.updateRoundingControl(active, shape ?? null);
-  const hasSlots = !!shape && Array.isArray(shape.booleanOps)
-    ? shape.booleanOps.length < MAX_BOOLEAN_OPS
-    : false;
-  ui.updateBooleanControls(all.length, hasSlots);
+  if (active !== -1 && shapes[active]) {
+    ui.updateRoundingControl(active, shapes[active]);
+  } else {
+    ui.updateRoundingControl(-1, null);
+  }
 });
 
 function drawTranslationGizmo(pos, activeAxis = -1) {
@@ -435,9 +424,6 @@ bool idMatches(float a, float b) {
 }
 
 float findSelectedId(float value) {
-  if (value <= 0.0) {
-    return -1.0;
-  }
   for (int i = 0; i < 16; i++) {
     if (i >= uSelectedCount) break;
     if (idMatches(value, uSelectedIds[i])) {
@@ -599,7 +585,6 @@ const camera = new OrbitCamera();
 const sdfRenderer = new SDFRenderer(gl);
 ui = new UIOptions();
 ui.setGizmoMode(gizmoMode);
-ui.updateBooleanControls(0, false);
 
 // UI Callbacks for the buttons and sliders
 ui.onLightRotate = (deg) => {
@@ -612,10 +597,7 @@ ui.onDeleteShape = () => {
   deleteSelectedShapes();
 };
 ui.onAddShape = (typeName) => {
-  const index = addShapeByName(typeName);
-  if (index !== -1) {
-    applySelection(index);
-  }
+  addShapeByName(typeName);
 };
 ui.onExportScene = () => {
   const text = exportSceneText();
@@ -624,13 +606,6 @@ ui.onExportScene = () => {
 };
 ui.onImportScene = (text) => {
   importSceneText(text);
-};
-ui.onApplyBoolean = (mode) => {
-  const op = BOOLEAN_MODE_MAP[mode] ?? BOOLEAN_OP_UNION;
-  const result = applyBooleanOperation(op);
-  if (!result.success && result.error) {
-    alert(result.error);
-  }
 };
 
 // Callback for color updates
@@ -1049,10 +1024,7 @@ window.addEventListener("keydown", (e) => {
 
   if (e.shiftKey && key === "a") {
     const typeName = ui ? ui.getSelectedShapeType() : "sphere";
-    const index = addShapeByName(typeName);
-    if (index !== -1) {
-      applySelection(index);
-    }
+    addShapeByName(typeName);
     return;
   }
   if (e.shiftKey && key === "d") {
@@ -1243,13 +1215,6 @@ const shapeParamData = new Float32Array(MAX_SHAPES * 4);
 const shapeRotData   = new Float32Array(MAX_SHAPES * 4);
 const shapeScaleData = new Float32Array(MAX_SHAPES * 3);
 const shapeColorData = new Float32Array(MAX_SHAPES * 3);
-const booleanCountData = new Int32Array(MAX_SHAPES);
-const booleanTypeData = new Int32Array(MAX_SHAPES * MAX_BOOLEAN_OPS);
-const booleanParamData = new Float32Array(MAX_SHAPES * MAX_BOOLEAN_OPS * 4);
-const booleanPosData = new Float32Array(MAX_SHAPES * MAX_BOOLEAN_OPS * 3);
-const booleanRotData = new Float32Array(MAX_SHAPES * MAX_BOOLEAN_OPS * 4);
-const booleanScaleData = new Float32Array(MAX_SHAPES * MAX_BOOLEAN_OPS * 3);
-const booleanOpData = new Int32Array(MAX_SHAPES * MAX_BOOLEAN_OPS);
 const selectedIdArray = new Float32Array(MAX_SHAPES);
 
 // =========================================
@@ -1274,14 +1239,7 @@ function render() {
     shapeParamData,
     shapeRotData,
     shapeScaleData,
-    shapeColorData,
-    booleanCountData,
-    booleanTypeData,
-    booleanParamData,
-    booleanPosData,
-    booleanRotData,
-    booleanScaleData,
-    booleanOpData
+    shapeColorData
   );
 
   selectedIdArray.fill(0);
@@ -1309,7 +1267,7 @@ function render() {
   mat4.invert(invProj, proj);
 
   // =========================================================
-  // PASS A — Render WORLD into outlineFBO (shared depth)
+  // PASS A  ERender WORLD into outlineFBO (shared depth)
   //   - grid
   //   - axes
   //   - SDF shapes
@@ -1341,13 +1299,6 @@ function render() {
       params: shapeParamData,
       scales: shapeScaleData,
       colors: shapeColorData,
-      booleanCounts: booleanCountData,
-      booleanTypes: booleanTypeData,
-      booleanParams: booleanParamData,
-      booleanPositions: booleanPosData,
-      booleanRotations: booleanRotData,
-      booleanScales: booleanScaleData,
-      booleanOps: booleanOpData,
     },
     lightDir,
   });
@@ -1374,7 +1325,7 @@ function render() {
   gl.drawArrays(gl.LINES, 0, 4);
 
   // =========================================================
-  // PASS B — Outline fullscreen post-process
+  // PASS B  EOutline fullscreen post-process
   // =========================================================
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, canvas.width, canvas.height);
@@ -1405,7 +1356,7 @@ function render() {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   // =========================================================
-  // PASS C — Gizmo (on top of everything)
+  // PASS C  EGizmo (on top of everything)
   // =========================================================
   gl.useProgram(program);
   gl.uniformMatrix4fv(uView, false, view);
