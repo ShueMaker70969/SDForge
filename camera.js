@@ -7,6 +7,9 @@ export class OrbitCamera {
     this.elevation = Math.PI / 6;
   }
 
+  // JUST A RANDOM COMMENT TO FORCE GIT TO RECOGNIZE CHANGES
+  // BRUH BRUH BRUH
+
   getEye() {
     const x = this.target[0] + this.radius * Math.cos(this.elevation) * Math.sin(this.azimuth);
     const y = this.target[1] + this.radius * Math.sin(this.elevation);
