@@ -641,6 +641,28 @@ ui.onUpdateShapeColor = (color) => {
   }
 };
 
+// Callback for adjustable shape params (torus, capsule, etc.)
+ui.onUpdateShapeParams = (params) => {
+  if (selectedShape === -1 || !shapes[selectedShape]) return;
+  const shape = shapes[selectedShape];
+
+  if (shape.type === SHAPE_TORUS && params.torusThickness !== undefined) {
+    shape.params[1] = params.torusThickness; // minor radius
+    uploadShapes(); // Upload to GPU after parameter change
+  }
+
+  if (shape.type === SHAPE_CAPSULE) {
+    if (params.capsuleRadius !== undefined) {
+      shape.params[0] = params.capsuleRadius; // radius
+      uploadShapes(); // Upload to GPU after parameter change
+    }
+    if (params.capsuleHeight !== undefined) {
+      shape.params[1] = params.capsuleHeight; // half-height (distance from center to each endpoint)
+      uploadShapes(); // Upload to GPU after parameter change
+    }
+  }
+};
+
 // Callback for box rounding updates
 ui.onUpdateBoxRounding = (rounding) => {
   if (selectedShape !== -1 && shapes[selectedShape]) {
