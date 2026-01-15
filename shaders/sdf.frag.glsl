@@ -27,6 +27,7 @@ uniform vec3 uLightDir;
 #define BOOLEAN_OP_UNION 0
 #define BOOLEAN_OP_SUBTRACT 1
 #define BOOLEAN_OP_INTERSECT 2
+#define BOOLEAN_OP_SMOOTH_UNION 3
 
 uniform int  uShapeCount;
 uniform vec3 uShapePos[MAX_SHAPES];
@@ -42,6 +43,7 @@ uniform vec3 uBooleanPos[MAX_SHAPES * MAX_BOOLEAN_OPS];
 uniform vec4 uBooleanRot[MAX_SHAPES * MAX_BOOLEAN_OPS];
 uniform vec3 uBooleanScale[MAX_SHAPES * MAX_BOOLEAN_OPS];
 uniform vec4 uBooleanParams[MAX_SHAPES * MAX_BOOLEAN_OPS];
+uniform float uBooleanSmooth[MAX_SHAPES * MAX_BOOLEAN_OPS];
 
 // ---------------- SDF ----------------
 float sdSphere(vec3 p, float r) {
@@ -111,6 +113,14 @@ float evaluateBooleanPrimitive(int shapeIndex, vec3 parentLocal, int slot) {
   return sd * scaleMin;
 }
 
+float smoothUnion(float d1, float d2, float k) {
+  if (k <= 0.0) {
+    return min(d1, d2);
+  }
+  float h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
+  return mix(d2, d1, h) - k * h * (1.0 - h);
+}
+
 float applyBooleanOps(int shapeIndex, vec3 local, float baseSd) {
   int count = uBooleanCount[shapeIndex];
   float result = baseSd;
@@ -128,6 +138,9 @@ float applyBooleanOps(int shapeIndex, vec3 local, float baseSd) {
       result = max(result, -childSd);
     } else if (op == BOOLEAN_OP_INTERSECT) {
       result = max(result, childSd);
+    } else if (op == BOOLEAN_OP_SMOOTH_UNION) {
+      float k = uBooleanSmooth[globalIndex];
+      result = smoothUnion(result, childSd, k);
     }
   }
   return result;

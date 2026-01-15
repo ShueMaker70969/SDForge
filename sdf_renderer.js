@@ -77,6 +77,7 @@ export class SDFRenderer {
     this.uBooleanRot = gl.getUniformLocation(this.program, "uBooleanRot");
     this.uBooleanScale = gl.getUniformLocation(this.program, "uBooleanScale");
     this.uBooleanParams = gl.getUniformLocation(this.program, "uBooleanParams");
+    this.uBooleanSmooth = gl.getUniformLocation(this.program, "uBooleanSmooth");
   }
   setShapes({ count, positions, rotations, types, params, scales }) {
     const gl = this.gl;
@@ -122,6 +123,7 @@ export class SDFRenderer {
     gl.uniform4fv(this.uBooleanRot, shapeData.booleanRotations);
     gl.uniform3fv(this.uBooleanScale, shapeData.booleanScales);
     gl.uniform4fv(this.uBooleanParams, shapeData.booleanParams);
+    gl.uniform1fv(this.uBooleanSmooth, shapeData.booleanSmooths);
 
     gl.drawBuffers([
       gl.COLOR_ATTACHMENT0,

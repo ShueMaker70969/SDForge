@@ -19,6 +19,9 @@ export const MAX_BOOLEAN_OPS = 4;
 export const BOOLEAN_OP_UNION = 0;
 export const BOOLEAN_OP_SUBTRACT = 1;
 export const BOOLEAN_OP_INTERSECT = 2;
+export const BOOLEAN_OP_SMOOTH_UNION = 3;
+
+const DEFAULT_SMOOTH_RADIUS = 0.25;
 
 /* =================================================
    Scene state
@@ -228,6 +231,7 @@ function cloneBooleanOps(list = []) {
   if (!Array.isArray(list)) return [];
   return list.map(entry => ({
     op: entry.op,
+    smooth: entry.smooth ?? 0,
     shape: cloneRelativeShapeData(entry.shape),
   }));
 }
@@ -236,6 +240,7 @@ function serializeBooleanOps(list = []) {
   if (!Array.isArray(list) || list.length === 0) return [];
   return list.map(entry => ({
     op: entry.op,
+    smooth: Number.isFinite(entry.smooth) ? entry.smooth : 0,
     shape: {
       type: entry.shape?.type ?? SHAPE_SPHERE,
       pos: Array.from(entry.shape?.pos ?? [0, 0, 0]),
@@ -267,12 +272,17 @@ function parseBooleanOps(list = []) {
   for (const entry of list) {
     if (!entry) continue;
     const op = Number(entry.op);
-    if (!Number.isInteger(op) || op < BOOLEAN_OP_UNION || op > BOOLEAN_OP_INTERSECT) {
+    if (!Number.isInteger(op) || op < BOOLEAN_OP_UNION || op > BOOLEAN_OP_SMOOTH_UNION) {
       continue;
     }
     const shape = parseRelativeShapeData(entry.shape);
     if (!shape) continue;
-    result.push({ op, shape });
+    const smooth = Number(entry.smooth);
+    result.push({
+      op,
+      smooth: Number.isFinite(smooth) && smooth > 0 ? smooth : 0,
+      shape,
+    });
   }
   return result;
 }
@@ -403,6 +413,7 @@ export function applyBooleanOperation(op) {
     if (!source) continue;
     target.booleanOps.push({
       op,
+      smooth: op === BOOLEAN_OP_SMOOTH_UNION ? DEFAULT_SMOOTH_RADIUS : 0,
       shape: createRelativeShapeData(source, target),
     });
   }
@@ -445,7 +456,8 @@ export function buildShapeUniforms(
   booleanPosOut,
   booleanRotOut,
   booleanScaleOut,
-  booleanOpOut
+  booleanOpOut,
+  booleanSmoothOut,
 ) {
   booleanCountOut.fill(0);
   booleanTypeOut.fill(0);
@@ -454,6 +466,7 @@ export function buildShapeUniforms(
   booleanRotOut.fill(0);
   booleanScaleOut.fill(0);
   booleanOpOut.fill(-1);
+  booleanSmoothOut.fill(0);
 
   for (let i = 0; i < shapes.length; i++) {
     const s = shapes[i];
@@ -479,6 +492,8 @@ export function buildShapeUniforms(
        const rotation = relShape.rotation ?? quat.create();
        booleanRotOut.set(rotation, targetIndex * 4);
        booleanScaleOut.set(relShape.scale ?? [1, 1, 1], targetIndex * 3);
+       const smoothValue = entry.smooth ?? 0;
+       booleanSmoothOut[targetIndex] = Number.isFinite(smoothValue) ? smoothValue : 0;
      }
   }
 }

@@ -145,6 +145,7 @@ export class UIOptions {
       ["union", "Union"],
       ["difference", "Difference"],
       ["intersect", "Intersect"],
+      ["smoothUnion", "Smooth Union"],
     ].forEach(([value, label]) => {
       const opt = document.createElement("option");
       opt.value = value;

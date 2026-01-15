@@ -18,6 +18,7 @@ import {
   BOOLEAN_OP_UNION,
   BOOLEAN_OP_SUBTRACT,
   BOOLEAN_OP_INTERSECT,
+  BOOLEAN_OP_SMOOTH_UNION,
 
   addShapeByName,
   deleteSelectedShapes,
@@ -60,6 +61,7 @@ const BOOLEAN_MODE_MAP = {
   union: BOOLEAN_OP_UNION,
   difference: BOOLEAN_OP_SUBTRACT,
   intersect: BOOLEAN_OP_INTERSECT,
+  smoothUnion: BOOLEAN_OP_SMOOTH_UNION,
 };
 
 let gizmoMode = "select";
@@ -1272,6 +1274,7 @@ const booleanPosData = new Float32Array(MAX_SHAPES * MAX_BOOLEAN_OPS * 3);
 const booleanRotData = new Float32Array(MAX_SHAPES * MAX_BOOLEAN_OPS * 4);
 const booleanScaleData = new Float32Array(MAX_SHAPES * MAX_BOOLEAN_OPS * 3);
 const booleanOpData = new Int32Array(MAX_SHAPES * MAX_BOOLEAN_OPS);
+const booleanSmoothData = new Float32Array(MAX_SHAPES * MAX_BOOLEAN_OPS);
 const selectedIdArray = new Float32Array(MAX_SHAPES);
 
 // =========================================
@@ -1303,7 +1306,8 @@ function render() {
     booleanPosData,
     booleanRotData,
     booleanScaleData,
-    booleanOpData
+    booleanOpData,
+    booleanSmoothData
   );
 
   selectedIdArray.fill(0);
@@ -1370,6 +1374,7 @@ function render() {
       booleanRotations: booleanRotData,
       booleanScales: booleanScaleData,
       booleanOps: booleanOpData,
+      booleanSmooths: booleanSmoothData,
     },
     lightDir,
   });
