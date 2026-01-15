@@ -1,4 +1,6 @@
 // ui_options.js
+import { ShortcutsPanel } from "./shortcuts_panel.js";
+
 export class UIOptions {
   constructor() {
     this.invertY = true;
@@ -12,6 +14,7 @@ export class UIOptions {
     this.onAddShape = null;
     this.onUpdateBoxRounding = null; //box rounding updates
     this.onUpdateShapeColor = null; //shape color updates
+    this.onUpdateShapeParams = null; // torus/capsule param updates
     this.onDeleteShape = null;
     this.onGizmoModeChange = null;
     this.onLightRotate = null;
@@ -287,6 +290,121 @@ export class UIOptions {
     
     this.deleteShapeBtn = deleteShapeBtn;
 
+    // ---- Shape Parameter Controls ----
+    const paramContainer = document.createElement("div");
+    paramContainer.style.display = "none"; // Hidden by default, shown when shape supports params
+    paramContainer.style.marginTop = "10px";
+
+    const paramTitle = document.createElement("div");
+    paramTitle.textContent = "Shape Parameters";
+    paramTitle.style.fontWeight = "bold";
+    paramTitle.style.marginBottom = "6px";
+    paramContainer.appendChild(paramTitle);
+
+    // Torus thickness
+    const torusThicknessLabel = document.createElement("label");
+    torusThicknessLabel.textContent = "Torus Thickness:";
+    torusThicknessLabel.style.display = "block";
+    torusThicknessLabel.style.marginBottom = "4px";
+
+    const torusThickness = document.createElement("input");
+    torusThickness.type = "range";
+    torusThickness.min = "0.05";
+    torusThickness.max = "1.5";
+    torusThickness.step = "0.01";
+    torusThickness.value = "0.25";
+    torusThickness.style.width = "150px";
+
+    const torusThicknessValue = document.createElement("span");
+    torusThicknessValue.textContent = "0.25";
+    torusThicknessValue.style.marginLeft = "8px";
+
+    torusThickness.addEventListener("input", (e) => {
+      const v = parseFloat(e.target.value);
+      const maxThickness = parseFloat(this.torusThickness.max);
+      // Clamp to max value (range input should handle this, but add safeguard)
+      const clampedV = Math.min(v, maxThickness);
+      torusThicknessValue.textContent = clampedV.toFixed(2);
+      if (this.onUpdateShapeParams) {
+        this.onUpdateShapeParams({ torusThickness: clampedV });
+      }
+    });
+
+    torusThicknessLabel.appendChild(torusThickness);
+    torusThicknessLabel.appendChild(torusThicknessValue);
+    paramContainer.appendChild(torusThicknessLabel);
+
+    // Capsule radius
+    const capsuleRadiusLabel = document.createElement("label");
+    capsuleRadiusLabel.textContent = "Capsule Radius:";
+    capsuleRadiusLabel.style.display = "block";
+    capsuleRadiusLabel.style.marginTop = "8px";
+    capsuleRadiusLabel.style.marginBottom = "4px";
+
+    const capsuleRadius = document.createElement("input");
+    capsuleRadius.type = "range";
+    capsuleRadius.min = "0.05";
+    capsuleRadius.max = "2.0";
+    capsuleRadius.step = "0.01";
+    capsuleRadius.value = "0.4";
+    capsuleRadius.style.width = "150px";
+
+    const capsuleRadiusValue = document.createElement("span");
+    capsuleRadiusValue.textContent = "0.40";
+    capsuleRadiusValue.style.marginLeft = "8px";
+
+    capsuleRadius.addEventListener("input", (e) => {
+      const v = parseFloat(e.target.value);
+      capsuleRadiusValue.textContent = v.toFixed(2);
+      if (this.onUpdateShapeParams) {
+        this.onUpdateShapeParams({ capsuleRadius: v });
+      }
+    });
+
+    capsuleRadiusLabel.appendChild(capsuleRadius);
+    capsuleRadiusLabel.appendChild(capsuleRadiusValue);
+    paramContainer.appendChild(capsuleRadiusLabel);
+
+    // Capsule half-height
+    const capsuleLenLabel = document.createElement("label");
+    capsuleLenLabel.textContent = "Capsule Half-Height:";
+    capsuleLenLabel.style.display = "block";
+    capsuleLenLabel.style.marginTop = "8px";
+    capsuleLenLabel.style.marginBottom = "4px";
+
+    const capsuleLen = document.createElement("input");
+    capsuleLen.type = "range";
+    capsuleLen.min = "0.05";
+    capsuleLen.max = "3.0";
+    capsuleLen.step = "0.01";
+    capsuleLen.value = "1.0"; // Half-height default
+    capsuleLen.style.width = "150px";
+
+    const capsuleLenValue = document.createElement("span");
+    capsuleLenValue.textContent = "1.00";
+    capsuleLenValue.style.marginLeft = "8px";
+
+    capsuleLen.addEventListener("input", (e) => {
+      const v = parseFloat(e.target.value);
+      capsuleLenValue.textContent = v.toFixed(2);
+      if (this.onUpdateShapeParams) {
+        this.onUpdateShapeParams({ capsuleHeight: v });
+      }
+    });
+
+    capsuleLenLabel.appendChild(capsuleLen);
+    capsuleLenLabel.appendChild(capsuleLenValue);
+    paramContainer.appendChild(capsuleLenLabel);
+
+    // Store parameter refs
+    this.paramContainer = paramContainer;
+    this.torusThickness = torusThickness;
+    this.torusThicknessValue = torusThicknessValue;
+    this.capsuleRadius = capsuleRadius;
+    this.capsuleRadiusValue = capsuleRadiusValue;
+    this.capsuleLen = capsuleLen;
+    this.capsuleLenValue = capsuleLenValue;
+
     // ---- Color Picker Control ----
     const colorContainer = document.createElement("div");
     colorContainer.style.display = "none"; // Hidden by default, shown when shape is selected
@@ -336,12 +454,15 @@ export class UIOptions {
       addRow,
       booleanContainer,
       roundingContainer,
+      paramContainer,
       colorContainer
     );
 
     document.body.appendChild(leftPanel);
     document.body.appendChild(rightPanel);
 
+    // ---- Shortcuts Panel ----
+    this.shortcutsPanel = new ShortcutsPanel();
   }
 
   // Method to update rounding control visibility and value
@@ -396,6 +517,50 @@ export class UIOptions {
       //dynamic (end, delete if needed)
     } else {
       this.roundingContainer.style.display = "none";
+    }
+
+    // Update shape parameter controls (torus, capsule)
+    this.updateShapeParamControls(selectedShape, shape);
+  }
+
+  updateShapeParamControls(selectedShape, shape) {
+    if (selectedShape !== -1 && shape) {
+      if (shape.type === 4) { // SHAPE_TORUS
+        this.paramContainer.style.display = "block";
+        this.torusThickness.parentElement.style.display = "block";
+        this.capsuleRadius.parentElement.style.display = "none";
+        this.capsuleLen.parentElement.style.display = "none";
+        
+        // Dynamic max thickness based on major radius
+        const majorRadius = shape.params[0] || 1.0;
+        const maxThickness = majorRadius * 0.99; // Prevent thickness from exceeding major radius
+        this.torusThickness.max = maxThickness.toFixed(2);
+        
+        const t = shape.params[1] || 0.25;
+        // Clamp thickness to max if it exceeds
+        const clampedT = Math.min(t, maxThickness);
+        if (clampedT !== t && this.onUpdateShapeParams) {
+          this.onUpdateShapeParams({ torusThickness: clampedT });
+        }
+        
+        this.torusThickness.value = clampedT;
+        this.torusThicknessValue.textContent = clampedT.toFixed(2);
+      } else if (shape.type === 3) { // SHAPE_CAPSULE
+        this.paramContainer.style.display = "block";
+        this.torusThickness.parentElement.style.display = "none";
+        this.capsuleRadius.parentElement.style.display = "block";
+        this.capsuleLen.parentElement.style.display = "block";
+        const r = shape.params[0] || 0.4;
+        const h = shape.params[1] || 1.0; // Half-height
+        this.capsuleRadius.value = r;
+        this.capsuleRadiusValue.textContent = r.toFixed(2);
+        this.capsuleLen.value = h;
+        this.capsuleLenValue.textContent = h.toFixed(2);
+      } else {
+        this.paramContainer.style.display = "none";
+      }
+    } else {
+      this.paramContainer.style.display = "none";
     }
   }
 
