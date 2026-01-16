@@ -125,6 +125,33 @@ export class UIOptions {
     });
     addRow.append(addShapeBtn, shapeSelect, deleteShapeBtn);
 
+    // ---- Morph Slider ---- <--- 0116 8PM
+    const morphContainer = document.createElement("div");
+    morphContainer.style.marginBottom = "10px";
+    morphContainer.style.marginTop = "10px";
+    
+    const morphLabel = document.createElement("label");
+    morphLabel.style.display = "flex";
+    morphLabel.style.flexDirection = "column";
+    morphLabel.style.gap = "0.25rem";
+    morphLabel.innerHTML = 'Morph Factor: <span id="morphVal">0.00</span>';
+    
+    const morphSlider = document.createElement("input");
+    morphSlider.type = "range";
+    morphSlider.min = "0";
+    morphSlider.max = "1";
+    morphSlider.step = "0.01";
+    morphSlider.value = "0";
+    
+    morphSlider.addEventListener("input", (e) => {
+        const val = parseFloat(e.target.value);
+        morphContainer.querySelector("#morphVal").textContent = val.toFixed(2);
+        window.morphFactor = val; // Global variable
+    });
+    
+    morphLabel.appendChild(morphSlider);
+    morphContainer.appendChild(morphLabel);
+
     // ---- Boolean operations ----
     const booleanContainer = document.createElement("div");
     booleanContainer.style.display = "flex";
@@ -453,6 +480,7 @@ export class UIOptions {
       gizmoLabel,
       document.createElement("hr"),
       addRow,
+      morphContainer, // <--- 0116 8PM
       booleanContainer,
       roundingContainer,
       paramContainer,
