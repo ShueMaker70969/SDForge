@@ -39,6 +39,8 @@ const lightDir = vec3.create();
 
 //what other shapes could be added? triangle, polygon, cone...
 
+window.morphFactor = 0.0; // <--- 0116 8PM
+
 let invView = mat4.create();
 let invProj = mat4.create();
 let ui = null;
@@ -1359,6 +1361,7 @@ function render() {
     cameraPos: camera.getEye(),
     width: canvas.width,
     height: canvas.height,
+    morphT: window.morphFactor, // <--- 0116 8PM
     shapeData: {
       count: shapes.length,
       positions: shapePosData,

@@ -78,6 +78,7 @@ export class SDFRenderer {
     this.uBooleanScale = gl.getUniformLocation(this.program, "uBooleanScale");
     this.uBooleanParams = gl.getUniformLocation(this.program, "uBooleanParams");
     this.uBooleanSmooth = gl.getUniformLocation(this.program, "uBooleanSmooth");
+    this.uMorphT = gl.getUniformLocation(this.program, "uMorphT"); // <--- 0116 8PM
   }
   setShapes({ count, positions, rotations, types, params, scales }) {
     const gl = this.gl;
@@ -100,6 +101,10 @@ export class SDFRenderer {
     if (lightDir) {
       gl.uniform3fv(this.uLightDir, lightDir);
     }
+
+    // Add this line: <--- 0116 8PM
+    // We expect 'morphT' to be passed in the arguments, or we default to 0
+    gl.uniform1f(this.uMorphT, arguments[0].morphT || 0.0);
 
     // camera uniforms
     gl.uniformMatrix4fv(this.uView, false, view);
