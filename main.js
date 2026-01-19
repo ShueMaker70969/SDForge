@@ -41,6 +41,28 @@ const lightDir = vec3.create();
 
 window.morphFactor = 0.0; // <--- 0116 8PM
 
+// PBR settings 
+let pbrSettings = {
+  roughness: 0.5,
+  metallic: 0.0,
+  aoIntensity: 1.0,
+  shadowSoftness: 16.0,
+};
+
+// Point lights array 
+let pointLights = [];
+
+// Area light settings 
+let areaLight = {
+  enabled: false,
+  position: [0, 5, 0],
+  color: [1, 1, 1],
+  intensity: 5.0,
+  right: [1, 0, 0],
+  up: [0, 0, 1],
+  size: [3, 3],
+};
+
 let invView = mat4.create();
 let invProj = mat4.create();
 let ui = null;
@@ -678,6 +700,32 @@ ui.onUpdateBoxRounding = (rounding) => {
     }
     uploadShapes(); // Upload to GPU after parameter change
   }
+};
+
+// PBR callbacks
+ui.onPBRUpdate = (settings) => {
+  pbrSettings = { ...settings };
+};
+
+ui.onPointLightUpdate = (lights) => {
+  pointLights = lights.map(l => ({
+    position: l.position,
+    color: l.color,
+    intensity: l.intensity,
+    radius: l.radius || 0,
+  }));
+};
+
+ui.onAreaLightUpdate = (light) => {
+  areaLight = {
+    enabled: light.enabled,
+    position: light.position,
+    color: light.color,
+    intensity: light.intensity,
+    right: [1, 0, 0],
+    up: [0, 0, 1],
+    size: light.size,
+  };
 };
 
 /* ============================
@@ -1380,6 +1428,15 @@ function render() {
       booleanSmooths: booleanSmoothData,
     },
     lightDir,
+    // PBR parameters
+    roughness: pbrSettings.roughness,
+    metallic: pbrSettings.metallic,
+    aoIntensity: pbrSettings.aoIntensity,
+    shadowSoftness: pbrSettings.shadowSoftness,
+    // Point lights
+    pointLights,
+    // Area light
+    areaLight,
   });
 
   gl.drawBuffers([gl.COLOR_ATTACHMENT0]);

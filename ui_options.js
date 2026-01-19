@@ -10,17 +10,43 @@ export class UIOptions {
     this.sceneTextarea = null;
     this.lightSlider = null;
 
+    // PBR settings
+    this.roughness = 0.5;
+    this.metallic = 0.0;
+    this.aoIntensity = 1.0;
+    this.shadowSoftness = 16.0;
+
+    // Point lights
+    this.pointLights = [
+      { enabled: false, position: [3, 4, 2], color: [1, 0.9, 0.8], intensity: 15.0, radius: 0.0 },
+      { enabled: false, position: [-3, 3, -2], color: [0.8, 0.9, 1], intensity: 10.0, radius: 0.0 },
+    ];
+
+    // Area light
+    this.areaLight = {
+      enabled: false,
+      position: [0, 5, 0],
+      color: [1, 1, 1],
+      intensity: 5.0,
+      size: [3, 3],
+    };
+
     // callbacks (assigned from outside)
     this.onAddShape = null;
-    this.onUpdateBoxRounding = null; //box rounding updates
-    this.onUpdateShapeColor = null; //shape color updates
-    this.onUpdateShapeParams = null; // torus/capsule param updates
+    this.onUpdateBoxRounding = null;
+    this.onUpdateShapeColor = null;
+    this.onUpdateShapeParams = null;
     this.onDeleteShape = null;
     this.onGizmoModeChange = null;
     this.onLightRotate = null;
     this.onExportScene = null;
     this.onImportScene = null;
     this.onApplyBoolean = null;
+    
+    // PBR callbacks
+    this.onPBRUpdate = null;
+    this.onPointLightUpdate = null;
+    this.onAreaLightUpdate = null;
 
     this._buildUI();
   }
@@ -219,6 +245,74 @@ export class UIOptions {
     lightLabel.appendChild(lightSlider);
     rightPanel.append(lightLabel);
     this.lightSlider = lightSlider;
+
+    // ===============================
+    // PBR LIGHTING CONTROLS
+    // ===============================
+    
+    const pbrSection = document.createElement("div");
+    pbrSection.style.marginTop = "1rem";
+    pbrSection.style.borderTop = "1px solid rgba(255,255,255,0.2)";
+    pbrSection.style.paddingTop = "0.75rem";
+
+    const pbrTitle = document.createElement("div");
+    pbrTitle.textContent = "PBR Lighting";
+    pbrTitle.style.fontWeight = "bold";
+    pbrTitle.style.marginBottom = "0.5rem";
+    pbrTitle.style.color = "#ffe18f";
+    pbrSection.appendChild(pbrTitle);
+
+    // Roughness
+    pbrSection.appendChild(this._createSlider("Roughness", 0, 1, 0.01, this.roughness, (val) => {
+      this.roughness = val;
+      this._emitPBRUpdate();
+    }));
+
+    // Metallic
+    pbrSection.appendChild(this._createSlider("Metallic", 0, 1, 0.01, this.metallic, (val) => {
+      this.metallic = val;
+      this._emitPBRUpdate();
+    }));
+
+    // Shadow Softness
+    pbrSection.appendChild(this._createSlider("Shadow Softness", 4, 64, 1, this.shadowSoftness, (val) => {
+      this.shadowSoftness = val;
+      this._emitPBRUpdate();
+    }));
+
+    // AO Intensity
+    pbrSection.appendChild(this._createSlider("AO Intensity", 0, 2, 0.05, this.aoIntensity, (val) => {
+      this.aoIntensity = val;
+      this._emitPBRUpdate();
+    }));
+
+    // ---- Point Lights Section ----
+    const pointLightsTitle = document.createElement("div");
+    pointLightsTitle.textContent = "Point Lights";
+    pointLightsTitle.style.fontWeight = "bold";
+    pointLightsTitle.style.marginTop = "0.75rem";
+    pointLightsTitle.style.marginBottom = "0.5rem";
+    pointLightsTitle.style.color = "#ffe18f";
+    pbrSection.appendChild(pointLightsTitle);
+
+    for (let i = 0; i < 2; i++) {
+      pbrSection.appendChild(this._createPointLightPanel(i));
+    }
+
+    // ---- Area Light Section ----
+    const areaLightTitle = document.createElement("div");
+    areaLightTitle.textContent = "Area Light";
+    areaLightTitle.style.fontWeight = "bold";
+    areaLightTitle.style.marginTop = "0.75rem";
+    areaLightTitle.style.marginBottom = "0.5rem";
+    areaLightTitle.style.color = "#ffe18f";
+    pbrSection.appendChild(areaLightTitle);
+
+    pbrSection.appendChild(this._createAreaLightPanel());
+
+    rightPanel.appendChild(pbrSection);
+    rightPanel.style.maxHeight = "calc(100vh - 40px)";
+    rightPanel.style.overflowY = "auto";
 
     // ---- Scene import/export ----
     const sceneIO = document.createElement("div");
@@ -619,5 +713,271 @@ export class UIOptions {
     if (this.lightSlider) {
       this.lightSlider.value = String(degrees);
     }
+  }
+
+  // Helper: Create slider control
+  _createSlider(label, min, max, step, defaultValue, onChange) {
+    const container = document.createElement("div");
+    container.style.marginBottom = "0.5rem";
+    container.style.fontSize = "0.85rem";
+
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.justifyContent = "space-between";
+
+    const labelText = document.createElement("span");
+    labelText.textContent = label;
+
+    const valueText = document.createElement("span");
+    valueText.textContent = defaultValue.toFixed(2);
+    valueText.style.color = "#aaa";
+
+    row.append(labelText, valueText);
+
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = String(min);
+    slider.max = String(max);
+    slider.step = String(step);
+    slider.value = String(defaultValue);
+    slider.style.width = "100%";
+
+    slider.addEventListener("input", (e) => {
+      const val = parseFloat(e.target.value);
+      valueText.textContent = val.toFixed(2);
+      onChange(val);
+    });
+
+    container.append(row, slider);
+    return container;
+  }
+
+  // Helper: Create point light panel
+  _createPointLightPanel(index) {
+    const panel = document.createElement("div");
+    panel.style.marginBottom = "0.5rem";
+    panel.style.padding = "0.4rem";
+    panel.style.background = "rgba(0,0,0,0.2)";
+    panel.style.borderRadius = "4px";
+    panel.style.fontSize = "0.8rem";
+
+    const light = this.pointLights[index];
+
+    const enableLabel = document.createElement("label");
+    enableLabel.style.display = "flex";
+    enableLabel.style.alignItems = "center";
+    enableLabel.style.gap = "0.5rem";
+
+    const enableCheck = document.createElement("input");
+    enableCheck.type = "checkbox";
+    enableCheck.checked = light.enabled;
+    enableCheck.addEventListener("change", () => {
+      light.enabled = enableCheck.checked;
+      this._emitPointLightUpdate();
+    });
+    enableLabel.append(enableCheck, `Light ${index + 1}`);
+    panel.appendChild(enableLabel);
+
+    // Position inputs
+    const posRow = document.createElement("div");
+    posRow.style.display = "flex";
+    posRow.style.gap = "0.25rem";
+    posRow.style.marginTop = "0.3rem";
+    ["X", "Y", "Z"].forEach((axis, i) => {
+      const input = document.createElement("input");
+      input.type = "number";
+      input.value = light.position[i];
+      input.style.width = "50px";
+      input.style.fontSize = "0.75rem";
+      input.addEventListener("change", (e) => {
+        light.position[i] = parseFloat(e.target.value) || 0;
+        this._emitPointLightUpdate();
+      });
+      posRow.appendChild(input);
+    });
+    panel.appendChild(posRow);
+
+    // Intensity
+    const intRow = document.createElement("div");
+    intRow.style.marginTop = "0.3rem";
+    intRow.innerHTML = `<span>Intensity:</span>`;
+    const intInput = document.createElement("input");
+    intInput.type = "range";
+    intInput.min = "0";
+    intInput.max = "50";
+    intInput.step = "0.5";
+    intInput.value = light.intensity;
+    intInput.style.width = "100px";
+    intInput.addEventListener("input", (e) => {
+      light.intensity = parseFloat(e.target.value);
+      this._emitPointLightUpdate();
+    });
+    intRow.appendChild(intInput);
+    panel.appendChild(intRow);
+
+    // Color
+    const colorRow = document.createElement("div");
+    colorRow.style.marginTop = "0.3rem";
+    const colorInput = document.createElement("input");
+    colorInput.type = "color";
+    colorInput.value = this._rgbToHex(light.color);
+    colorInput.addEventListener("input", (e) => {
+      light.color = this._hexToRgb(e.target.value);
+      this._emitPointLightUpdate();
+    });
+    colorRow.append("Color: ", colorInput);
+    panel.appendChild(colorRow);
+
+    return panel;
+  }
+
+  // Helper: Create area light panel
+  _createAreaLightPanel() {
+    const panel = document.createElement("div");
+    panel.style.padding = "0.4rem";
+    panel.style.background = "rgba(0,0,0,0.2)";
+    panel.style.borderRadius = "4px";
+    panel.style.fontSize = "0.8rem";
+
+    const light = this.areaLight;
+
+    const enableLabel = document.createElement("label");
+    enableLabel.style.display = "flex";
+    enableLabel.style.alignItems = "center";
+    enableLabel.style.gap = "0.5rem";
+
+    const enableCheck = document.createElement("input");
+    enableCheck.type = "checkbox";
+    enableCheck.checked = light.enabled;
+    enableCheck.addEventListener("change", () => {
+      light.enabled = enableCheck.checked;
+      this._emitAreaLightUpdate();
+    });
+    enableLabel.append(enableCheck, "Enable");
+    panel.appendChild(enableLabel);
+
+    // Position
+    const posRow = document.createElement("div");
+    posRow.style.display = "flex";
+    posRow.style.gap = "0.25rem";
+    posRow.style.marginTop = "0.3rem";
+    ["X", "Y", "Z"].forEach((axis, i) => {
+      const input = document.createElement("input");
+      input.type = "number";
+      input.value = light.position[i];
+      input.style.width = "50px";
+      input.style.fontSize = "0.75rem";
+      input.addEventListener("change", (e) => {
+        light.position[i] = parseFloat(e.target.value) || 0;
+        this._emitAreaLightUpdate();
+      });
+      posRow.appendChild(input);
+    });
+    panel.appendChild(posRow);
+
+    // Intensity
+    const intRow = document.createElement("div");
+    intRow.style.marginTop = "0.3rem";
+    intRow.innerHTML = `<span>Intensity:</span>`;
+    const intInput = document.createElement("input");
+    intInput.type = "range";
+    intInput.min = "0";
+    intInput.max = "30";
+    intInput.step = "0.5";
+    intInput.value = light.intensity;
+    intInput.style.width = "100px";
+    intInput.addEventListener("input", (e) => {
+      light.intensity = parseFloat(e.target.value);
+      this._emitAreaLightUpdate();
+    });
+    intRow.appendChild(intInput);
+    panel.appendChild(intRow);
+
+    // Size
+    const sizeRow = document.createElement("div");
+    sizeRow.style.marginTop = "0.3rem";
+    sizeRow.innerHTML = `<span>Size: </span>`;
+    ["W", "H"].forEach((axis, i) => {
+      const input = document.createElement("input");
+      input.type = "number";
+      input.value = light.size[i];
+      input.style.width = "45px";
+      input.style.fontSize = "0.75rem";
+      input.addEventListener("change", (e) => {
+        light.size[i] = parseFloat(e.target.value) || 1;
+        this._emitAreaLightUpdate();
+      });
+      sizeRow.appendChild(input);
+    });
+    panel.appendChild(sizeRow);
+
+    // Color
+    const colorRow = document.createElement("div");
+    colorRow.style.marginTop = "0.3rem";
+    const colorInput = document.createElement("input");
+    colorInput.type = "color";
+    colorInput.value = this._rgbToHex(light.color);
+    colorInput.addEventListener("input", (e) => {
+      light.color = this._hexToRgb(e.target.value);
+      this._emitAreaLightUpdate();
+    });
+    colorRow.append("Color: ", colorInput);
+    panel.appendChild(colorRow);
+
+    return panel;
+  }
+
+  _emitPBRUpdate() {
+    if (this.onPBRUpdate) {
+      this.onPBRUpdate({
+        roughness: this.roughness,
+        metallic: this.metallic,
+        aoIntensity: this.aoIntensity,
+        shadowSoftness: this.shadowSoftness,
+      });
+    }
+  }
+
+  _emitPointLightUpdate() {
+    if (this.onPointLightUpdate) {
+      this.onPointLightUpdate(this.pointLights.filter(l => l.enabled));
+    }
+  }
+
+  _emitAreaLightUpdate() {
+    if (this.onAreaLightUpdate) {
+      this.onAreaLightUpdate(this.areaLight);
+    }
+  }
+
+  _hexToRgb(hex) {
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    return [r, g, b];
+  }
+
+  _rgbToHex(rgb) {
+    const r = Math.round(rgb[0] * 255).toString(16).padStart(2, '0');
+    const g = Math.round(rgb[1] * 255).toString(16).padStart(2, '0');
+    const b = Math.round(rgb[2] * 255).toString(16).padStart(2, '0');
+    return `#${r}${g}${b}`;
+  }
+
+  getPBRSettings() {
+    return {
+      roughness: this.roughness,
+      metallic: this.metallic,
+      aoIntensity: this.aoIntensity,
+      shadowSoftness: this.shadowSoftness,
+    };
+  }
+
+  getPointLights() {
+    return this.pointLights.filter(l => l.enabled);
+  }
+
+  getAreaLight() {
+    return this.areaLight;
   }
 }
