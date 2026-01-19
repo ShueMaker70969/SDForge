@@ -44,7 +44,6 @@ async function loadText(url) {
 const SDF_VERT_SRC = await loadText("./shaders/sdf.vert.glsl");
 const SDF_FRAG_SRC = await loadText("./shaders/sdf.frag.glsl");
 
-const MAX_POINT_LIGHTS = 4;
 
 // ============================
 // SDFRenderer
@@ -60,42 +59,10 @@ export class SDFRenderer {
     this.uInvProj = gl.getUniformLocation(this.program, "uInvProj");
     this.uCamPos = gl.getUniformLocation(this.program, "uCameraPos");
 
-    // Directional light
+    //for adjusting the light direction in the scene. This is global light.
     this.uLightDir = gl.getUniformLocation(this.program, "uLightDir");
 
-    // Morph uniform
-    this.uMorphT = gl.getUniformLocation(this.program, "uMorphT");
-
-    // PBR Material uniforms
-    this.uRoughness = gl.getUniformLocation(this.program, "uRoughness");
-    this.uMetallic = gl.getUniformLocation(this.program, "uMetallic");
-    this.uAOIntensity = gl.getUniformLocation(this.program, "uAOIntensity");
-    this.uShadowSoftness = gl.getUniformLocation(this.program, "uShadowSoftness");
-
-    // Point lights
-    this.uPointLightCount = gl.getUniformLocation(this.program, "uPointLightCount");
-    this.uPointLightPos = [];
-    this.uPointLightColor = [];
-    this.uPointLightIntensity = [];
-    this.uPointLightRadius = [];
-    
-    for (let i = 0; i < MAX_POINT_LIGHTS; i++) {
-      this.uPointLightPos.push(gl.getUniformLocation(this.program, `uPointLightPos[${i}]`));
-      this.uPointLightColor.push(gl.getUniformLocation(this.program, `uPointLightColor[${i}]`));
-      this.uPointLightIntensity.push(gl.getUniformLocation(this.program, `uPointLightIntensity[${i}]`));
-      this.uPointLightRadius.push(gl.getUniformLocation(this.program, `uPointLightRadius[${i}]`));
-    }
-
-    // Area light
-    this.uAreaLightEnabled = gl.getUniformLocation(this.program, "uAreaLightEnabled");
-    this.uAreaLightPos = gl.getUniformLocation(this.program, "uAreaLightPos");
-    this.uAreaLightColor = gl.getUniformLocation(this.program, "uAreaLightColor");
-    this.uAreaLightIntensity = gl.getUniformLocation(this.program, "uAreaLightIntensity");
-    this.uAreaLightRight = gl.getUniformLocation(this.program, "uAreaLightRight");
-    this.uAreaLightUp = gl.getUniformLocation(this.program, "uAreaLightUp");
-    this.uAreaLightSize = gl.getUniformLocation(this.program, "uAreaLightSize");
-
-    // Shape uniforms
+    //The stuff necessary for the shape list, that defines the shapes in scene
     this.uShapeCount = gl.getUniformLocation(this.program, "uShapeCount");
     this.uShapePos   = gl.getUniformLocation(this.program, "uShapePos");
     this.uShapeType  = gl.getUniformLocation(this.program, "uShapeType");
@@ -111,6 +78,7 @@ export class SDFRenderer {
     this.uBooleanScale = gl.getUniformLocation(this.program, "uBooleanScale");
     this.uBooleanParams = gl.getUniformLocation(this.program, "uBooleanParams");
     this.uBooleanSmooth = gl.getUniformLocation(this.program, "uBooleanSmooth");
+    this.uMorphT = gl.getUniformLocation(this.program, "uMorphT"); // <--- 0116 8PM
   }
   setShapes({ count, positions, rotations, types, params, scales }) {
     const gl = this.gl;
@@ -123,19 +91,8 @@ export class SDFRenderer {
     gl.uniform4fv(this.uShapeParams, params);
   }
 
-  draw({ 
-    view, proj, invView, invProj, cameraPos, width, height, shapeData, lightDir,
-    morphT = 0.0,
-    // PBR parameters with defaults
-    roughness = 0.5,
-    metallic = 0.0,
-    aoIntensity = 1.0,
-    shadowSoftness = 16.0,
-    // Point lights array
-    pointLights = [],
-    // Area light
-    areaLight = null,
-  }) {
+
+  draw({ view, proj, invView, invProj, cameraPos, width, height, shapeData, lightDir,}) {
     const gl = this.gl;
 
     gl.useProgram(this.program);
@@ -145,48 +102,11 @@ export class SDFRenderer {
       gl.uniform3fv(this.uLightDir, lightDir);
     }
 
-    // Morph factor
-    gl.uniform1f(this.uMorphT, morphT);
+    // Add this line: <--- 0116 8PM
+    // We expect 'morphT' to be passed in the arguments, or we default to 0
+    gl.uniform1f(this.uMorphT, arguments[0].morphT || 0.0);
 
-    // PBR Material parameters
-    gl.uniform1f(this.uRoughness, roughness);
-    gl.uniform1f(this.uMetallic, metallic);
-    gl.uniform1f(this.uAOIntensity, aoIntensity);
-    gl.uniform1f(this.uShadowSoftness, shadowSoftness);
-
-    // Point lights
-    const lightCount = Math.min(pointLights.length, MAX_POINT_LIGHTS);
-    gl.uniform1i(this.uPointLightCount, lightCount);
-    
-    for (let i = 0; i < MAX_POINT_LIGHTS; i++) {
-      if (i < lightCount) {
-        const light = pointLights[i];
-        gl.uniform3fv(this.uPointLightPos[i], light.position || [0, 5, 0]);
-        gl.uniform3fv(this.uPointLightColor[i], light.color || [1, 1, 1]);
-        gl.uniform1f(this.uPointLightIntensity[i], light.intensity ?? 10.0);
-        gl.uniform1f(this.uPointLightRadius[i], light.radius ?? 0.0);
-      } else {
-        gl.uniform3fv(this.uPointLightPos[i], [0, 0, 0]);
-        gl.uniform3fv(this.uPointLightColor[i], [0, 0, 0]);
-        gl.uniform1f(this.uPointLightIntensity[i], 0);
-        gl.uniform1f(this.uPointLightRadius[i], 0);
-      }
-    }
-
-    // Area light
-    if (areaLight && areaLight.enabled) {
-      gl.uniform1i(this.uAreaLightEnabled, 1);
-      gl.uniform3fv(this.uAreaLightPos, areaLight.position || [0, 5, 0]);
-      gl.uniform3fv(this.uAreaLightColor, areaLight.color || [1, 1, 1]);
-      gl.uniform1f(this.uAreaLightIntensity, areaLight.intensity ?? 5.0);
-      gl.uniform3fv(this.uAreaLightRight, areaLight.right || [1, 0, 0]);
-      gl.uniform3fv(this.uAreaLightUp, areaLight.up || [0, 0, 1]);
-      gl.uniform2fv(this.uAreaLightSize, areaLight.size || [2, 2]);
-    } else {
-      gl.uniform1i(this.uAreaLightEnabled, 0);
-    }
-
-    // Camera uniforms
+    // camera uniforms
     gl.uniformMatrix4fv(this.uView, false, view);
     gl.uniformMatrix4fv(this.uProj, false, proj);
     gl.uniformMatrix4fv(this.uInvView, false, invView);
@@ -215,5 +135,6 @@ export class SDFRenderer {
       gl.COLOR_ATTACHMENT1
     ]);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+
   }
 }
