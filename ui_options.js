@@ -11,10 +11,7 @@ export class UIOptions {
     this.lightSlider = null;
 
     // PBR settings
-    this.roughness = 0.5;
-    this.metallic = 0.0;
     this.aoIntensity = 1.0;
-    this.shadowSoftness = 16.0;
 
     // Point lights
     this.pointLights = [
@@ -261,24 +258,6 @@ export class UIOptions {
     pbrTitle.style.marginBottom = "0.5rem";
     pbrTitle.style.color = "#ffe18f";
     pbrSection.appendChild(pbrTitle);
-
-    // Roughness
-    pbrSection.appendChild(this._createSlider("Roughness", 0, 1, 0.01, this.roughness, (val) => {
-      this.roughness = val;
-      this._emitPBRUpdate();
-    }));
-
-    // Metallic
-    pbrSection.appendChild(this._createSlider("Metallic", 0, 1, 0.01, this.metallic, (val) => {
-      this.metallic = val;
-      this._emitPBRUpdate();
-    }));
-
-    // Shadow Softness
-    pbrSection.appendChild(this._createSlider("Shadow Softness", 4, 64, 1, this.shadowSoftness, (val) => {
-      this.shadowSoftness = val;
-      this._emitPBRUpdate();
-    }));
 
     // AO Intensity
     pbrSection.appendChild(this._createSlider("AO Intensity", 0, 2, 0.05, this.aoIntensity, (val) => {
@@ -930,10 +909,7 @@ export class UIOptions {
   _emitPBRUpdate() {
     if (this.onPBRUpdate) {
       this.onPBRUpdate({
-        roughness: this.roughness,
-        metallic: this.metallic,
         aoIntensity: this.aoIntensity,
-        shadowSoftness: this.shadowSoftness,
       });
     }
   }
@@ -966,10 +942,7 @@ export class UIOptions {
 
   getPBRSettings() {
     return {
-      roughness: this.roughness,
-      metallic: this.metallic,
       aoIntensity: this.aoIntensity,
-      shadowSoftness: this.shadowSoftness,
     };
   }
 

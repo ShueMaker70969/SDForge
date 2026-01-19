@@ -23,10 +23,7 @@ float opMorph(float d1, float d2, float t) {
 }
 
 // --- PBR Material uniforms ---
-uniform float uRoughness;
-uniform float uMetallic;
 uniform float uAOIntensity;
-uniform float uShadowSoftness;
 
 // --- Point lights (up to 4) ---
 #define MAX_POINT_LIGHTS 4
@@ -265,6 +262,7 @@ float calcSoftShadow(vec3 ro, vec3 rd, float mint, float maxt, float k) {
     ph = h;
     t += clamp(h, 0.01, 0.5);
   }
+  
   return clamp(shadow, 0.0, 1.0);
 }
 
@@ -286,7 +284,8 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0) {
   return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0) {
+  const float roughness = 0.5;
   return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
@@ -318,8 +317,10 @@ float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
 }
 
 // ==================== Point Light ====================
-vec3 calcPointLight(vec3 pos, vec3 N, vec3 V, vec3 albedo, float roughness, float metallic,
+vec3 calcPointLight(vec3 pos, vec3 N, vec3 V, vec3 albedo,
                     vec3 lightPos, vec3 lightColor, float intensity, float radius) {
+  const float roughness = 0.5;
+  const float metallic = 0.0;
   vec3 L = lightPos - pos;
   float distance = length(L);
   L = normalize(L);
@@ -332,7 +333,7 @@ vec3 calcPointLight(vec3 pos, vec3 N, vec3 V, vec3 albedo, float roughness, floa
   }
   
   vec3 radiance = lightColor * attenuation;
-  float shadow = calcSoftShadow(pos, L, 0.02, distance, uShadowSoftness);
+  float shadow = calcSoftShadow(pos, L, 0.02, distance, 32.0);
   
   vec3 F0 = vec3(0.04);
   F0 = mix(F0, albedo, metallic);
@@ -358,9 +359,11 @@ float hash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 
-vec3 calcAreaLight(vec3 pos, vec3 N, vec3 V, vec3 albedo, float roughness, float metallic,
+vec3 calcAreaLight(vec3 pos, vec3 N, vec3 V, vec3 albedo,
                    vec3 lightPos, vec3 lightColor, float intensity, 
                    vec3 lightRight, vec3 lightUp, vec2 lightSize) {
+  const float roughness = 0.5;
+  const float metallic = 0.0;
   vec3 Lo = vec3(0.0);
   const int SAMPLES = 4;
   float sampleWeight = 1.0 / float(SAMPLES * SAMPLES);
@@ -387,7 +390,7 @@ vec3 calcAreaLight(vec3 pos, vec3 N, vec3 V, vec3 albedo, float roughness, float
       attenuation *= facing;
       
       vec3 radiance = lightColor * attenuation;
-      float shadow = calcSoftShadow(pos, L, 0.02, distance, uShadowSoftness * 0.5);
+      float shadow = calcSoftShadow(pos, L, 0.02, distance, 16.0);
       
       float NDF = distributionGGX(N, H, roughness);
       float G = geometrySmith(N, V, L, roughness);
@@ -409,12 +412,14 @@ vec3 calcAreaLight(vec3 pos, vec3 N, vec3 V, vec3 albedo, float roughness, float
 }
 
 // ==================== Directional Light (Sun) ====================
-vec3 calcDirectionalLight(vec3 pos, vec3 N, vec3 V, vec3 albedo, float roughness, float metallic, vec3 lightDir) {
+vec3 calcDirectionalLight(vec3 pos, vec3 N, vec3 V, vec3 albedo, vec3 lightDir) {
+  const float roughness = 0.5;
+  const float metallic = 0.0;
   vec3 L = normalize(lightDir);
   vec3 H = normalize(V + L);
   vec3 radiance = vec3(1.0, 0.98, 0.95) * 2.0;
   
-  float shadow = calcSoftShadow(pos, L, 0.02, 50.0, uShadowSoftness);
+  float shadow = calcSoftShadow(pos, L, 0.02, 50.0, 32.0);
   
   vec3 F0 = vec3(0.04);
   F0 = mix(F0, albedo, metallic);
@@ -470,33 +475,33 @@ void main() {
     ? uShapeColor[hitShape] 
     : vec3(0.8);
   
-  float roughness = max(uRoughness, 0.04);
-  float metallic = uMetallic;
   float ao = calcAO(hitPos, N);
   
   vec3 Lo = vec3(0.0);
   
   // Directional light (sun)
-  Lo += calcDirectionalLight(hitPos, N, V, albedo, roughness, metallic, uLightDir);
+  Lo += calcDirectionalLight(hitPos, N, V, albedo, uLightDir);
   
   // Point lights
   for (int i = 0; i < MAX_POINT_LIGHTS; i++) {
     if (i >= uPointLightCount) break;
-    Lo += calcPointLight(hitPos, N, V, albedo, roughness, metallic,
+    Lo += calcPointLight(hitPos, N, V, albedo,
       uPointLightPos[i], uPointLightColor[i], uPointLightIntensity[i], uPointLightRadius[i]);
   }
   
   // Area light
   if (uAreaLightEnabled > 0) {
-    Lo += calcAreaLight(hitPos, N, V, albedo, roughness, metallic,
+    Lo += calcAreaLight(hitPos, N, V, albedo,
       uAreaLightPos, uAreaLightColor, uAreaLightIntensity,
       uAreaLightRight, uAreaLightUp, uAreaLightSize);
   }
   
-  // Ambient
+  // Ambient (fixed roughness=0.5, metallic=0.0)
+  const float roughness = 0.5;
+  const float metallic = 0.0;
   vec3 F0 = vec3(0.04);
   F0 = mix(F0, albedo, metallic);
-  vec3 kS = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness);
+  vec3 kS = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0);
   vec3 kD = 1.0 - kS;
   kD *= 1.0 - metallic;
   

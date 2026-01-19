@@ -43,10 +43,7 @@ window.morphFactor = 0.0; // <--- 0116 8PM
 
 // PBR settings 
 let pbrSettings = {
-  roughness: 0.5,
-  metallic: 0.0,
   aoIntensity: 1.0,
-  shadowSoftness: 16.0,
 };
 
 // Point lights array 
@@ -1429,10 +1426,7 @@ function render() {
     },
     lightDir,
     // PBR parameters
-    roughness: pbrSettings.roughness,
-    metallic: pbrSettings.metallic,
     aoIntensity: pbrSettings.aoIntensity,
-    shadowSoftness: pbrSettings.shadowSoftness,
     // Point lights
     pointLights,
     // Area light

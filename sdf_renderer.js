@@ -67,10 +67,7 @@ export class SDFRenderer {
     this.uMorphT = gl.getUniformLocation(this.program, "uMorphT");
 
     // PBR Material uniforms
-    this.uRoughness = gl.getUniformLocation(this.program, "uRoughness");
-    this.uMetallic = gl.getUniformLocation(this.program, "uMetallic");
     this.uAOIntensity = gl.getUniformLocation(this.program, "uAOIntensity");
-    this.uShadowSoftness = gl.getUniformLocation(this.program, "uShadowSoftness");
 
     // Point lights
     this.uPointLightCount = gl.getUniformLocation(this.program, "uPointLightCount");
@@ -127,10 +124,7 @@ export class SDFRenderer {
     view, proj, invView, invProj, cameraPos, width, height, shapeData, lightDir,
     morphT = 0.0,
     // PBR parameters with defaults
-    roughness = 0.5,
-    metallic = 0.0,
     aoIntensity = 1.0,
-    shadowSoftness = 16.0,
     // Point lights array
     pointLights = [],
     // Area light
@@ -149,10 +143,7 @@ export class SDFRenderer {
     gl.uniform1f(this.uMorphT, morphT);
 
     // PBR Material parameters
-    gl.uniform1f(this.uRoughness, roughness);
-    gl.uniform1f(this.uMetallic, metallic);
     gl.uniform1f(this.uAOIntensity, aoIntensity);
-    gl.uniform1f(this.uShadowSoftness, shadowSoftness);
 
     // Point lights
     const lightCount = Math.min(pointLights.length, MAX_POINT_LIGHTS);
