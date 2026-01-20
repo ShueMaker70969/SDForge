@@ -22,6 +22,26 @@ float opMorph(float d1, float d2, float t) {
     return mix(d1, d2, clamp(t, 0.0, 1.0));
 }
 
+// --- PBR Material uniforms ---
+uniform float uAOIntensity;
+
+// --- Point lights (up to 4) ---
+#define MAX_POINT_LIGHTS 4
+uniform int uPointLightCount;
+uniform vec3 uPointLightPos[MAX_POINT_LIGHTS];
+uniform vec3 uPointLightColor[MAX_POINT_LIGHTS];
+uniform float uPointLightIntensity[MAX_POINT_LIGHTS];
+uniform float uPointLightRadius[MAX_POINT_LIGHTS];
+
+// --- Area light ---
+uniform int uAreaLightEnabled;
+uniform vec3 uAreaLightPos;
+uniform vec3 uAreaLightColor;
+uniform float uAreaLightIntensity;
+uniform vec3 uAreaLightRight;
+uniform vec3 uAreaLightUp;
+uniform vec2 uAreaLightSize;
+
 // --- Constants ---
 #define MAX_SHAPES 16
 #define SHAPE_SPHERE 0
@@ -34,6 +54,9 @@ float opMorph(float d1, float d2, float t) {
 #define BOOLEAN_OP_SUBTRACT 1
 #define BOOLEAN_OP_INTERSECT 2
 #define BOOLEAN_OP_SMOOTH_UNION 3
+
+const float PI = 3.14159265359;
+const float EPSILON = 0.0001;
 
 uniform int  uShapeCount;
 uniform vec3 uShapePos[MAX_SHAPES];
@@ -134,21 +157,17 @@ float applyBooleanOps(int shapeIndex, vec3 local, float baseSd) {
   return result;
 }
 
-// --- OPTIMIZED MAP SCENE ---
+// --- OPTIMIZED MAP SCENE with Morph ---
 float mapScene(vec3 p) {
     float d = 1e9;
     gHitShape = -1;
     
-    // Store d0 across loop iterations
     float d0_store = 1e9; 
-    
-    // Only morph if slider is moved AND we have >1 shape
     bool doMorph = (uMorphT > 0.01 && uShapeCount > 1);
 
     for (int i = 0; i < MAX_SHAPES; i++) {
         if (i >= uShapeCount) break;
 
-        // 1. Standard Geometry Calculations (Same as original)
         vec3 q = p - uShapePos[i];
         vec4 rot = uShapeRot[i];
         vec3 local = rotateVecByQuat(q, vec4(-rot.xyz, rot.w));
@@ -157,30 +176,23 @@ float mapScene(vec3 p) {
         float sd = evalPrimitive(uShapeType[i], local, uShapeParams[i]);
         float scaleMin = min(uShapeScale[i].x, min(uShapeScale[i].y, uShapeScale[i].z));
         sd *= scaleMin;
-        
-        // 2. Standard Boolean Logic (Same as original)
         sd = applyBooleanOps(i, local, sd);
 
-        // 3. MORPH LOGIC (Tiny injection)
         if (doMorph) {
             if (i == 0) {
-                d0_store = sd; // Save Shape 0, don't display yet
+                d0_store = sd;
                 continue;      
             }
             if (i == 1) {
-                // Morph Shape 0 (stored) and Shape 1 (current)
                 sd = opMorph(d0_store, sd, uMorphT);
-                
-                // Visual Color Hack
                 if (sd < d) {
                     d = sd;
                     gHitShape = (uMorphT < 0.5) ? 0 : 1;
                 }
-                continue; // We handled the update manually
+                continue;
             }
         }
 
-        // 4. Standard Union
         if (sd < d) {
             d = sd;
             gHitShape = i;
@@ -189,13 +201,243 @@ float mapScene(vec3 p) {
     return d;
 }
 
-vec3 calcNormal(vec3 p) {
-  float e = 0.001;
-  return normalize(vec3(
-    mapScene(p + vec3(e,0,0)) - mapScene(p - vec3(e,0,0)),
-    mapScene(p + vec3(0,e,0)) - mapScene(p - vec3(0,e,0)),
-    mapScene(p + vec3(0,0,e)) - mapScene(p - vec3(0,0,e))
-  ));
+// Scene map without shape tracking (for shadow/AO rays)
+float mapSceneSimple(vec3 p) {
+    float d = 1e9;
+    float d0_store = 1e9;
+    bool doMorph = (uMorphT > 0.01 && uShapeCount > 1);
+
+    for (int i = 0; i < MAX_SHAPES; i++) {
+        if (i >= uShapeCount) break;
+
+        vec3 q = p - uShapePos[i];
+        vec4 rot = uShapeRot[i];
+        vec3 local = rotateVecByQuat(q, vec4(-rot.xyz, rot.w));
+        local /= uShapeScale[i];
+
+        float sd = evalPrimitive(uShapeType[i], local, uShapeParams[i]);
+        float scaleMin = min(uShapeScale[i].x, min(uShapeScale[i].y, uShapeScale[i].z));
+        sd *= scaleMin;
+        sd = applyBooleanOps(i, local, sd);
+
+        if (doMorph) {
+            if (i == 0) { d0_store = sd; continue; }
+            if (i == 1) { sd = opMorph(d0_store, sd, uMorphT); }
+        }
+
+        d = min(d, sd);
+    }
+    return d;
+}
+
+// ==================== Tetrahedral Normal Calculation ====================
+vec3 calcNormalTetrahedral(vec3 p) {
+  const float h = 0.0005;
+  const vec3 k0 = vec3( 1.0, -1.0, -1.0);
+  const vec3 k1 = vec3(-1.0, -1.0,  1.0);
+  const vec3 k2 = vec3(-1.0,  1.0, -1.0);
+  const vec3 k3 = vec3( 1.0,  1.0,  1.0);
+  
+  return normalize(
+    k0 * mapSceneSimple(p + k0 * h) +
+    k1 * mapSceneSimple(p + k1 * h) +
+    k2 * mapSceneSimple(p + k2 * h) +
+    k3 * mapSceneSimple(p + k3 * h)
+  );
+}
+
+// ==================== SDF Soft Shadows ====================
+float calcSoftShadow(vec3 ro, vec3 rd, float mint, float maxt, float k) {
+  float shadow = 1.0;
+  float t = mint;
+  float ph = 1e10;
+  
+  for (int i = 0; i < 64; i++) {
+    if (t >= maxt) break;
+    float h = mapSceneSimple(ro + rd * t);
+    if (h < EPSILON) return 0.0;
+    float y = h * h / (2.0 * ph);
+    float dist = sqrt(h * h - y * y);
+    shadow = min(shadow, k * dist / max(0.0, t - y));
+    ph = h;
+    t += clamp(h, 0.01, 0.5);
+  }
+  
+  return clamp(shadow, 0.0, 1.0);
+}
+
+// ==================== SDF Ambient Occlusion ====================
+float calcAO(vec3 pos, vec3 nor) {
+  float occ = 0.0;
+  float sca = 1.0;
+  for (int i = 0; i < 5; i++) {
+    float h = 0.01 + 0.12 * float(i) / 4.0;
+    float d = mapSceneSimple(pos + h * nor);
+    occ += (h - d) * sca;
+    sca *= 0.95;
+  }
+  return clamp(1.0 - 3.0 * occ * uAOIntensity, 0.0, 1.0);
+}
+
+// ==================== PBR Functions ====================
+vec3 fresnelSchlick(float cosTheta, vec3 F0) {
+  return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0) {
+  const float roughness = 0.5;
+  return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+float distributionGGX(vec3 N, vec3 H, float roughness) {
+  float a = roughness * roughness;
+  float a2 = a * a;
+  float NdotH = max(dot(N, H), 0.0);
+  float NdotH2 = NdotH * NdotH;
+  float num = a2;
+  float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+  denom = PI * denom * denom;
+  return num / denom;
+}
+
+float geometrySchlickGGX(float NdotV, float roughness) {
+  float r = (roughness + 1.0);
+  float k = (r * r) / 8.0;
+  float num = NdotV;
+  float denom = NdotV * (1.0 - k) + k;
+  return num / denom;
+}
+
+float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+  float NdotV = max(dot(N, V), 0.0);
+  float NdotL = max(dot(N, L), 0.0);
+  float ggx2 = geometrySchlickGGX(NdotV, roughness);
+  float ggx1 = geometrySchlickGGX(NdotL, roughness);
+  return ggx1 * ggx2;
+}
+
+// ==================== Point Light ====================
+vec3 calcPointLight(vec3 pos, vec3 N, vec3 V, vec3 albedo,
+                    vec3 lightPos, vec3 lightColor, float intensity, float radius) {
+  const float roughness = 0.5;
+  const float metallic = 0.0;
+  vec3 L = lightPos - pos;
+  float distance = length(L);
+  L = normalize(L);
+  vec3 H = normalize(V + L);
+  
+  float attenuation = intensity / (distance * distance + 0.01);
+  if (radius > 0.0) {
+    float falloff = 1.0 - smoothstep(radius * 0.5, radius, distance);
+    attenuation *= falloff;
+  }
+  
+  vec3 radiance = lightColor * attenuation;
+  float shadow = calcSoftShadow(pos, L, 0.02, distance, 32.0);
+  
+  vec3 F0 = vec3(0.04);
+  F0 = mix(F0, albedo, metallic);
+  
+  float NDF = distributionGGX(N, H, roughness);
+  float G = geometrySmith(N, V, L, roughness);
+  vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
+  
+  vec3 kS = F;
+  vec3 kD = vec3(1.0) - kS;
+  kD *= 1.0 - metallic;
+  
+  vec3 numerator = NDF * G * F;
+  float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
+  vec3 specular = numerator / denominator;
+  
+  float NdotL = max(dot(N, L), 0.0);
+  return (kD * albedo / PI + specular) * radiance * NdotL * shadow;
+}
+
+// ==================== Area Light ====================
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+vec3 calcAreaLight(vec3 pos, vec3 N, vec3 V, vec3 albedo,
+                   vec3 lightPos, vec3 lightColor, float intensity, 
+                   vec3 lightRight, vec3 lightUp, vec2 lightSize) {
+  const float roughness = 0.5;
+  const float metallic = 0.0;
+  vec3 Lo = vec3(0.0);
+  const int SAMPLES = 4;
+  float sampleWeight = 1.0 / float(SAMPLES * SAMPLES);
+  
+  vec3 F0 = vec3(0.04);
+  F0 = mix(F0, albedo, metallic);
+  
+  for (int i = 0; i < SAMPLES; i++) {
+    for (int j = 0; j < SAMPLES; j++) {
+      vec2 uv = vec2(
+        (float(i) + hash(pos.xy + float(i))) / float(SAMPLES) - 0.5,
+        (float(j) + hash(pos.yz + float(j))) / float(SAMPLES) - 0.5
+      );
+      
+      vec3 samplePos = lightPos + lightRight * uv.x * lightSize.x + lightUp * uv.y * lightSize.y;
+      vec3 L = samplePos - pos;
+      float distance = length(L);
+      L = normalize(L);
+      vec3 H = normalize(V + L);
+      
+      float attenuation = intensity / (distance * distance + 1.0);
+      vec3 lightNormal = normalize(cross(lightRight, lightUp));
+      float facing = max(0.0, dot(-L, lightNormal));
+      attenuation *= facing;
+      
+      vec3 radiance = lightColor * attenuation;
+      float shadow = calcSoftShadow(pos, L, 0.02, distance, 16.0);
+      
+      float NDF = distributionGGX(N, H, roughness);
+      float G = geometrySmith(N, V, L, roughness);
+      vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
+      
+      vec3 kS = F;
+      vec3 kD = vec3(1.0) - kS;
+      kD *= 1.0 - metallic;
+      
+      vec3 numerator = NDF * G * F;
+      float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
+      vec3 specular = numerator / denominator;
+      
+      float NdotL = max(dot(N, L), 0.0);
+      Lo += (kD * albedo / PI + specular) * radiance * NdotL * shadow * sampleWeight;
+    }
+  }
+  return Lo;
+}
+
+// ==================== Directional Light (Sun) ====================
+vec3 calcDirectionalLight(vec3 pos, vec3 N, vec3 V, vec3 albedo, vec3 lightDir) {
+  const float roughness = 0.5;
+  const float metallic = 0.0;
+  vec3 L = normalize(lightDir);
+  vec3 H = normalize(V + L);
+  vec3 radiance = vec3(1.0, 0.98, 0.95) * 2.0;
+  
+  float shadow = calcSoftShadow(pos, L, 0.02, 50.0, 32.0);
+  
+  vec3 F0 = vec3(0.04);
+  F0 = mix(F0, albedo, metallic);
+  
+  float NDF = distributionGGX(N, H, roughness);
+  float G = geometrySmith(N, V, L, roughness);
+  vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
+  
+  vec3 kS = F;
+  vec3 kD = vec3(1.0) - kS;
+  kD *= 1.0 - metallic;
+  
+  vec3 numerator = NDF * G * F;
+  float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
+  vec3 specular = numerator / denominator;
+  
+  float NdotL = max(dot(N, L), 0.0);
+  return (kD * albedo / PI + specular) * radiance * NdotL * shadow;
 }
 
 bool raymarch(vec3 ro, vec3 rd, out float t) {
@@ -223,19 +465,59 @@ void main() {
   if (!raymarch(ro, rd, t)) discard;
 
   vec3 hitPos = ro + rd * t;
-  mapScene(hitPos); // update gHitShape
+  mapScene(hitPos);
+  int hitShape = gHitShape;
+
+  vec3 N = calcNormalTetrahedral(hitPos);
+  vec3 V = normalize(uCameraPos - hitPos);
   
-  vec3 normal = calcNormal(hitPos);
-  vec3 lightDir = normalize(uLightDir);
-  float diff = max(dot(normal, lightDir), 0.0);
-  
-  vec3 shapeColor = (gHitShape >= 0 && gHitShape < uShapeCount) 
-    ? uShapeColor[gHitShape] 
+  vec3 albedo = (hitShape >= 0 && hitShape < uShapeCount) 
+    ? uShapeColor[hitShape] 
     : vec3(0.8);
   
-  outColor = vec4(shapeColor * (0.3 + 0.7 * diff), 1.0);
+  float ao = calcAO(hitPos, N);
   
-  float encodedId = (gHitShape >= 0) ? (float(gHitShape) + 1.0) / 255.0 : 0.0;
+  vec3 Lo = vec3(0.0);
+  
+  // Directional light (sun)
+  Lo += calcDirectionalLight(hitPos, N, V, albedo, uLightDir);
+  
+  // Point lights
+  for (int i = 0; i < MAX_POINT_LIGHTS; i++) {
+    if (i >= uPointLightCount) break;
+    Lo += calcPointLight(hitPos, N, V, albedo,
+      uPointLightPos[i], uPointLightColor[i], uPointLightIntensity[i], uPointLightRadius[i]);
+  }
+  
+  // Area light
+  if (uAreaLightEnabled > 0) {
+    Lo += calcAreaLight(hitPos, N, V, albedo,
+      uAreaLightPos, uAreaLightColor, uAreaLightIntensity,
+      uAreaLightRight, uAreaLightUp, uAreaLightSize);
+  }
+  
+  // Ambient (fixed roughness=0.5, metallic=0.0)
+  const float roughness = 0.5;
+  const float metallic = 0.0;
+  vec3 F0 = vec3(0.04);
+  F0 = mix(F0, albedo, metallic);
+  vec3 kS = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0);
+  vec3 kD = 1.0 - kS;
+  kD *= 1.0 - metallic;
+  
+  vec3 ambient = kD * albedo * vec3(0.03, 0.04, 0.05) * ao;
+  float skyAmount = max(0.0, N.y * 0.5 + 0.5);
+  ambient += albedo * vec3(0.1, 0.12, 0.15) * skyAmount * ao * 0.3;
+  
+  vec3 color = ambient + Lo;
+  
+  // Tone mapping (ACES)
+  color = color / (color + vec3(1.0));
+  color = pow(color, vec3(1.0 / 2.2));
+  
+  outColor = vec4(color, 1.0);
+  
+  float encodedId = (hitShape >= 0) ? (float(hitShape) + 1.0) / 255.0 : 0.0;
   outMask = vec4(encodedId, 0.0, 0.0, 1.0);
   
   vec4 viewPos = uView * vec4(hitPos, 1.0);

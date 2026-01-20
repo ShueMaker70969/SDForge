@@ -12,7 +12,7 @@ export class ShortcutsPanel {
     shortcutsPanel.className = "shortcuts-panel";
     shortcutsPanel.style.position = "fixed";
     shortcutsPanel.style.bottom = "20px";
-    shortcutsPanel.style.right = "20px";
+    shortcutsPanel.style.left = "20px";
     shortcutsPanel.style.minWidth = "200px";
     shortcutsPanel.style.maxWidth = "400px";
     shortcutsPanel.style.zIndex = "10000";
