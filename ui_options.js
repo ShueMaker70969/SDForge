@@ -119,6 +119,8 @@ export class UIOptions {
       ["cylinder", "Cylinder"],
       ["capsule", "Capsule"],
       ["torus", "Torus"],
+      ["octahedron", "Octahedron"],
+      ["cone", "Cone"],
     ];
     options.forEach(([val, label]) => {
       const opt = document.createElement("option");
@@ -584,7 +586,7 @@ export class UIOptions {
     } else {
       this.colorContainer.style.display = "none";
     }
-    if (selectedShape !== -1 && shape && (shape.type === 1 || shape.type === 2)) { // SHAPE_BOX = 1, SHAPE_CYL = 2
+    if (selectedShape !== -1 && shape && (shape.type === 1 || shape.type === 2 || shape.type === 6)) { // SHAPE_BOX = 1, SHAPE_CYL = 2, SHAPE_OCTAHEDRON = 6
       this.roundingContainer.style.display = "block";
       
       // Calculate max rounding based on shape dimensions (dynamic, start here if needed)
@@ -595,13 +597,19 @@ export class UIOptions {
       } else if (shape.type === 2) { // SHAPE_CYL
         // Max rounding = smaller of radius or half-height
         maxRounding = Math.min(shape.params[0], shape.params[1]);
+      } else if (shape.type === 6) { // SHAPE_OCTAHEDRON
+        // Max rounding based on size (scaled by sqrt(3) for plane offset)
+        maxRounding = shape.params[0]/ 1.73205081; // size / sqrt(3)
       }
       
       // Set max value (with small epsilon to prevent edge cases)
       this.roundingInput.max = (maxRounding * 0.99).toFixed(2);
       
-      // Box uses params[3], Cylinder uses params[2]
-      const rounding = shape.type === 1 ? (shape.params[3] || 0) : (shape.params[2] || 0);
+      // Box uses params[3], Cylinder uses params[2], Octahedron uses params[1]
+      let rounding = 0;
+      if (shape.type === 1) rounding = shape.params[3] || 0;        // SHAPE_BOX
+      else if (shape.type === 2) rounding = shape.params[2] || 0;   // SHAPE_CYL
+      else if (shape.type === 6) rounding = shape.params[1] || 0;   // SHAPE_OCTAHEDRON
       //static 
       //this.roundingInput.value = rounding;
       //this.roundingValue.textContent = rounding.toFixed(2);

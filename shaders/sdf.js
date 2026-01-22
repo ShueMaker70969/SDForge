@@ -65,6 +65,8 @@ uniform vec2 uAreaLightSize;
 #define SHAPE_CYL 2
 #define SHAPE_CAPSULE 3
 #define SHAPE_TORUS 4
+#define SHAPE_CONE 5
+#define SHAPE_OCTAHEDRON 6
 #define MAX_BOOLEAN_OPS 4
 #define BOOLEAN_OP_UNION 0
 #define BOOLEAN_OP_SUBTRACT 1
@@ -111,6 +113,32 @@ float sdTorus(vec3 p, vec2 t) {
     vec2 q = vec2(length(p.xz) - t.x, p.y);
     return length(q) - t.y;
 }
+float sdCone(vec3 p, float r, float h) {
+    float ri = max(r, 0.001);
+    float hi = max(h, 0.001);
+    p.y -= hi * 0.5;  // Center vertically
+    vec2 q = hi * vec2(ri / hi, -1.0);
+    vec2 w = vec2(length(p.xz), p.y);
+    vec2 a = w - q * clamp(dot(w, q) / dot(q, q), 0.0, 1.0);
+    vec2 b = w - q * vec2(clamp(w.x / q.x, 0.0, 1.0), 1.0);
+    float k = sign(q.y);
+    float d = min(dot(a, a), dot(b, b));
+    float s = max(k * (w.x * q.y - w.y * q.x), k * (w.y - q.y));
+    return sqrt(d) * sign(s);
+}
+float sdOctahedron(vec3 p, float s, float rounding) {
+    // Shrink inner octahedron to keep outer bounds same after rounding
+    float si = max(s - rounding * 1.73205081, 0.001);
+    p = abs(p);
+    float m = p.x + p.y + p.z - si;
+    vec3 q;
+    if (3.0 * p.x < m) q = p.xyz;
+    else if (3.0 * p.y < m) q = p.yzx;
+    else if (3.0 * p.z < m) q = p.zxy;
+    else return m * 0.57735027 - rounding;
+    float k = clamp(0.5 * (q.z - q.y + si), 0.0, si);
+    return length(vec3(q.x, q.y - si + k, q.z - k)) - rounding;
+}
 
 vec3 rotateVecByQuat(vec3 v, vec4 q) {
     vec3 t = 2.0 * cross(q.xyz, v);
@@ -127,6 +155,8 @@ float evalPrimitive(int type, vec3 local, vec4 params) {
     return sdCapsule(local, a, b, params.x);
   }
   if (type == SHAPE_TORUS)  return sdTorus(local, params.xy);
+  if (type == SHAPE_CONE)   return sdCone(local, params.x, params.y);
+  if (type == SHAPE_OCTAHEDRON) return sdOctahedron(local, params.x, params.y);
   return 1e9;
 }
 

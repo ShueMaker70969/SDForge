@@ -14,6 +14,8 @@ export const SHAPE_BOX     = 1;
 export const SHAPE_CYL     = 2;
 export const SHAPE_CAPSULE = 3;
 export const SHAPE_TORUS   = 4;
+export const SHAPE_CONE    = 5;
+export const SHAPE_OCTAHEDRON = 6;
 
 export const MAX_BOOLEAN_OPS = 4;
 export const BOOLEAN_OP_UNION = 0;
@@ -51,6 +53,10 @@ function defaultParamsForType(type) {
       return [0.4, 1.0, 0, 0];
     case SHAPE_TORUS:
       return [1.0, 0.25, 0, 0];
+    case SHAPE_CONE:
+      return [0.7, 1.5, 0, 0]; // base radius, height
+    case SHAPE_OCTAHEDRON:
+      return [1.0, 0.0, 0, 0]; // size, rounding
     default:
       return [1.0, 0, 0, 0];
   }
@@ -96,6 +102,10 @@ export function addShapeByName(typeName) {
       return addShapeAtOrigin(SHAPE_CAPSULE);
     case "torus":
       return addShapeAtOrigin(SHAPE_TORUS);
+    case "cone":
+      return addShapeAtOrigin(SHAPE_CONE);
+    case "octahedron":
+      return addShapeAtOrigin(SHAPE_OCTAHEDRON);
     case "sphere":
     default:
       return addShapeAtOrigin(SHAPE_SPHERE);
@@ -254,7 +264,7 @@ function serializeBooleanOps(list = []) {
 function parseRelativeShapeData(data) {
   if (!data) return null;
   const type = Number(data.type);
-  if (!Number.isInteger(type) || type < SHAPE_SPHERE || type > SHAPE_TORUS) {
+  if (!Number.isInteger(type) || type < SHAPE_SPHERE || type > SHAPE_OCTAHEDRON) {
     return null;
   }
   return {
@@ -312,7 +322,7 @@ export function loadSceneData(data) {
     const src = data.shapes[i];
     if (!src) continue;
     const type = Number(src.type);
-    if (!Number.isInteger(type) || type < SHAPE_SPHERE || type > SHAPE_TORUS) {
+    if (!Number.isInteger(type) || type < SHAPE_SPHERE || type > SHAPE_OCTAHEDRON) {
       continue;
     }
 

@@ -12,6 +12,8 @@ import {
   SHAPE_CYL,
   SHAPE_TORUS,
   addShapeByName,
+  SHAPE_CONE,
+  SHAPE_OCTAHEDRON,
   applyBooleanOperation,
   applySelection,
   deleteSelectedShapes,
@@ -219,6 +221,10 @@ function updateBoxRounding(rounding) {
     syncShapesToRenderer(sdfRenderer);
   } else if (shape.type === SHAPE_CYL) {
     shape.params[2] = rounding;
+    syncShapesToRenderer(sdfRenderer);
+  }
+  else if (shape.type === SHAPE_OCTAHEDRON) {
+    shape.params[1] = rounding;
     syncShapesToRenderer(sdfRenderer);
   }
 }
