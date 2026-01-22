@@ -83,6 +83,7 @@ export function createGizmoController(gl, attributeLocations, options = {}) {
     state.dragging = false;
     state.dragType = null;
     state.activeAxisIndex = -1;
+    state.axisConstraint = null;
   }
 
   function draw(shape) {
@@ -164,17 +165,18 @@ export function createGizmoController(gl, attributeLocations, options = {}) {
 
   function handleKeyboardAxis(axisChar) {
     if (!axisChar) {
-      state.axisConstraint = null;
       resetDrag();
       return;
     }
     if (state.axisConstraint === axisChar) {
-      state.axisConstraint = null;
       resetDrag();
       return;
     }
     state.axisConstraint = axisChar;
-    beginKeyboardGizmoDrag(state);
+    const started = beginKeyboardGizmoDrag(state);
+    if (!started) {
+      state.axisConstraint = null;
+    }
   }
 
   return {
@@ -330,18 +332,20 @@ function beginTranslationDrag(shape, axisIndex, ray, state) {
   vec3.copy(state.startPos, shape.pos);
   const t = projectRayToAxis(ray.origin, ray.dir, state.startPos, GIZMO_DIRS[axisIndex]);
   state.startT = t ?? 0;
+  return true;
 }
 
 function beginRotationDrag(shape, axisIndex, hitPoint, state) {
   const axisDir = GIZMO_DIRS[axisIndex];
   if (!projectPointToPlaneVector(hitPoint, shape.pos, axisDir, state.rotationStartVec)) {
-    return;
+    return false;
   }
   state.activeAxisIndex = axisIndex;
   state.dragging = true;
   state.dragType = "rotate";
   vec3.copy(state.rotationAxis, axisDir);
   quat.copy(state.rotationStartQuat, shape.rotation);
+  return true;
 }
 
 function beginScaleDrag(shape, axisIndex, ray, state) {
@@ -353,6 +357,7 @@ function beginScaleDrag(shape, axisIndex, ray, state) {
   const t = projectRayToAxis(ray.origin, ray.dir, state.startPos, dirs[axisIndex]);
   state.startT = t ?? 0;
   state.startScale = shape.scale[axisIndex];
+  return true;
 }
 
 function handleRotationDrag(shape, rayDir, rayOrigin, state) {
@@ -487,30 +492,28 @@ function signedAngleBetween(a, b, axisDir) {
 }
 
 function beginKeyboardGizmoDrag(state) {
-  if (selectedShape === -1) return;
-  if (!state.axisConstraint) return;
+  if (selectedShape === -1) return false;
+  if (!state.axisConstraint) return false;
   const axisIndex = axisCharToIndex(state.axisConstraint);
-  if (axisIndex === -1) return;
-  if (state.mode === "select") return;
+  if (axisIndex === -1) return false;
+  if (state.mode === "select") return false;
 
   const ray = state.lastMouseRay;
   const shape = shapes[selectedShape];
-  if (!ray || !shape) return;
-
-  state.activeAxisIndex = axisIndex;
-  state.dragging = true;
-  state.dragType = state.mode;
+  if (!ray || !shape) return false;
 
   if (state.mode === "translate") {
-    beginTranslationDrag(shape, axisIndex, ray, state);
-  } else if (state.mode === "rotate") {
-    const hit = intersectRayPlane(ray.origin, ray.dir, shape.pos, GIZMO_DIRS[axisIndex]);
-    if (hit) {
-      beginRotationDrag(shape, axisIndex, hit, state);
-    }
-  } else if (state.mode === "scale") {
-    beginScaleDrag(shape, axisIndex, ray, state);
+    return beginTranslationDrag(shape, axisIndex, ray, state);
   }
+  if (state.mode === "rotate") {
+    const hit = intersectRayPlane(ray.origin, ray.dir, shape.pos, GIZMO_DIRS[axisIndex]);
+    if (!hit) return false;
+    return beginRotationDrag(shape, axisIndex, hit, state);
+  }
+  if (state.mode === "scale") {
+    return beginScaleDrag(shape, axisIndex, ray, state);
+  }
+  return false;
 }
 
 function axisCharToIndex(axis) {

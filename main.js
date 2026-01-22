@@ -162,7 +162,6 @@ setupInputHandlers({
   gizmo,
   ui,
   getInverseMatrices: () => ({ invView, invProj }),
-  onSceneGeometryChanged: () => syncShapesToRenderer(sdfRenderer),
 });
 
 syncShapesToRenderer(sdfRenderer);
