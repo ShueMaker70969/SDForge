@@ -1,3 +1,5 @@
+import { SDF_VS, SDF_FS } from "./shaders/sdf.js";
+
 // ============================
 // Shader helpers
 // ============================
@@ -32,18 +34,6 @@ function createProgram(gl, vsSource, fsSource) {
   return program;
 }
 
-// ============================
-// SDF shaders LOADED From ./shaders/
-// ============================
-async function loadText(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to load ${url}`);
-  return await res.text();
-}
-
-const SDF_VERT_SRC = await loadText("./shaders/sdf.vert.glsl");
-const SDF_FRAG_SRC = await loadText("./shaders/sdf.frag.glsl");
-
 const MAX_POINT_LIGHTS = 4;
 
 // ============================
@@ -52,7 +42,7 @@ const MAX_POINT_LIGHTS = 4;
 export class SDFRenderer {
   constructor(gl) {
     this.gl = gl;
-    this.program = createProgram(gl, SDF_VERT_SRC, SDF_FRAG_SRC);
+    this.program = createProgram(gl, SDF_VS, SDF_FS);
 
     this.uView   = gl.getUniformLocation(this.program, "uView");
     this.uProj   = gl.getUniformLocation(this.program, "uProj");

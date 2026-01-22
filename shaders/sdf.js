@@ -1,4 +1,20 @@
-#version 300 es
+export const SDF_VS = `#version 300 es
+precision highp float;
+
+const vec2 verts[3] = vec2[](
+  vec2(-1.0, -1.0),
+  vec2( 3.0, -1.0),
+  vec2(-1.0,  3.0)
+);
+
+out vec2 vUV;
+
+void main() {
+  gl_Position = vec4(verts[gl_VertexID], 0.0, 1.0);
+  vUV = gl_Position.xy * 0.5 + 0.5;
+}`
+
+export const SDF_FS = `#version 300 es
 precision highp float;
 
 in vec2 vUV;
@@ -524,3 +540,5 @@ void main() {
   vec4 clipPos = uProj * viewPos;
   gl_FragDepth = clipPos.z / clipPos.w * 0.5 + 0.5;
 }
+`;
+
