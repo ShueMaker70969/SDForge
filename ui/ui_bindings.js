@@ -14,6 +14,7 @@ export function createUIBindings({
   onPBRUpdate,
   onPointLightUpdate,
   onAreaLightUpdate,
+  onTextureUpdate,
 }) {
   const ui = new UIOptions();
   ui.setGizmoMode(gizmo.getMode());
@@ -73,6 +74,10 @@ export function createUIBindings({
 
   ui.onAreaLightUpdate = (light) => {
     onAreaLightUpdate?.(light);
+  };
+
+  ui.onTextureUpdate = (settings) => {
+    onTextureUpdate?.(settings);
   };
 
   return ui;

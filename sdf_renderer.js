@@ -59,6 +59,11 @@ export class SDFRenderer {
     // PBR Material uniforms
     this.uAOIntensity = gl.getUniformLocation(this.program, "uAOIntensity");
 
+    // Procedural texture uniforms
+    this.uTextureType = gl.getUniformLocation(this.program, "uTextureType");
+    this.uTextureScale = gl.getUniformLocation(this.program, "uTextureScale");
+    this.uTextureDisplacement = gl.getUniformLocation(this.program, "uTextureDisplacement");
+
     // Point lights
     this.uPointLightCount = gl.getUniformLocation(this.program, "uPointLightCount");
     this.uPointLightPos = [];
@@ -115,6 +120,10 @@ export class SDFRenderer {
     morphT = 0.0,
     // PBR parameters with defaults
     aoIntensity = 1.0,
+    // Procedural texture parameters
+    textureType = 0,
+    textureScale = 5.0,
+    textureDisplacement = 0.0,
     // Point lights array
     pointLights = [],
     // Area light
@@ -134,6 +143,11 @@ export class SDFRenderer {
 
     // PBR Material parameters
     gl.uniform1f(this.uAOIntensity, aoIntensity);
+
+    // Procedural textures
+    gl.uniform1i(this.uTextureType, textureType);
+    gl.uniform1f(this.uTextureScale, textureScale);
+    gl.uniform1f(this.uTextureDisplacement, textureDisplacement);
 
     // Point lights
     const lightCount = Math.min(pointLights.length, MAX_POINT_LIGHTS);

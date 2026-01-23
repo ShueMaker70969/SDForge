@@ -55,6 +55,18 @@ const lightingState = {
 };
 
 const pbrSettings = { aoIntensity: 1.0 };
+const textureSettings = {
+  type: "none",
+  scale: 5.0,
+  displacement: 0.15,
+};
+const TEXTURE_TYPE_MAP = {
+  none: 0,
+  voronoi: 1,
+  fbm: 2,
+  cellular: 3,
+  noise: 4,
+};
 const pointLights = [];
 const areaLight = {
   enabled: false,
@@ -144,6 +156,9 @@ ui = createUIBindings({
     areaLight.up = [0, 0, 1];
     areaLight.size = Array.isArray(light.size) ? [...light.size] : [...areaLight.size];
   },
+  onTextureUpdate: (settings) => {
+    Object.assign(textureSettings, settings);
+  },
 });
 
 ui.setLightSlider(lightingState.angle * 180 / Math.PI);
@@ -184,6 +199,8 @@ const renderLoop = createRenderLoop({
   outlineTargets: rendering.outlineTargets,
   lightingState,
   pbrSettingsRef: pbrSettings,
+  textureSettingsRef: textureSettings,
+  textureTypeMap: TEXTURE_TYPE_MAP,
   pointLightsRef: pointLights,
   areaLightRef: areaLight,
   invView,

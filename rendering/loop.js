@@ -29,6 +29,8 @@ export function createRenderLoop({
   outlineTargets,
   lightingState,
   pbrSettingsRef,
+  textureSettingsRef,
+  textureTypeMap,
   pointLightsRef,
   areaLightRef,
   invView,
@@ -78,6 +80,8 @@ export function createRenderLoop({
       shapeData,
       lightingState,
       pbrSettingsRef,
+      textureSettingsRef,
+      textureTypeMap,
       pointLightsRef,
       areaLightRef,
     });
@@ -129,6 +133,8 @@ function drawScenePass({
   shapeData,
   lightingState,
   pbrSettingsRef,
+  textureSettingsRef,
+  textureTypeMap,
   pointLightsRef,
   areaLightRef,
 }) {
@@ -168,6 +174,9 @@ function drawScenePass({
     },
     lightDir: lightingState.direction,
     aoIntensity: pbrSettingsRef.aoIntensity,
+    textureType: textureTypeMap[textureSettingsRef.type] ?? 0,
+    textureScale: textureSettingsRef.scale,
+    textureDisplacement: textureSettingsRef.displacement,
     pointLights: pointLightsRef,
     areaLight: areaLightRef,
   });

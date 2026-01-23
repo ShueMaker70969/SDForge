@@ -13,6 +13,11 @@ export class UIOptions {
     // PBR settings
     this.aoIntensity = 1.0;
 
+    // Procedural texture settings
+    this.textureType = "none";
+    this.textureScale = 5.0;
+    this.textureDisplacement = 0.15;
+
     // Point lights
     this.pointLights = [
       { enabled: false, position: [3, 4, 2], color: [1, 0.9, 0.8], intensity: 15.0, radius: 0.0 },
@@ -44,6 +49,9 @@ export class UIOptions {
     this.onPBRUpdate = null;
     this.onPointLightUpdate = null;
     this.onAreaLightUpdate = null;
+
+    // Procedural texture callback
+    this.onTextureUpdate = null;
 
     this._buildUI();
   }
@@ -294,6 +302,61 @@ export class UIOptions {
     rightPanel.appendChild(pbrSection);
     rightPanel.style.maxHeight = "calc(100vh - 40px)";
     rightPanel.style.overflowY = "auto";
+
+    // ===============================
+    // Procedural Texture Controls
+    // ===============================
+    const textureSection = document.createElement("div");
+    textureSection.style.marginTop = "1rem";
+    textureSection.style.borderTop = "1px solid rgba(255,255,255,0.2)";
+    textureSection.style.paddingTop = "0.75rem";
+
+    const textureTitle = document.createElement("div");
+    textureTitle.textContent = "Procedural Texture";
+    textureTitle.style.fontWeight = "bold";
+    textureTitle.style.marginBottom = "0.5rem";
+    textureTitle.style.color = "#ffe18f";
+    textureSection.appendChild(textureTitle);
+
+    const textureLabel = document.createElement("label");
+    textureLabel.textContent = "Texture Type:";
+    textureLabel.style.display = "flex";
+    textureLabel.style.flexDirection = "column";
+    textureLabel.style.gap = "0.25rem";
+    textureLabel.style.fontSize = "0.85rem";
+
+    const textureSelect = document.createElement("select");
+    [
+      ["none", "None"],
+      ["voronoi", "Voronoi (Cells)"],
+      ["fbm", "FBM (Clouds)"],
+      ["cellular", "Cellular (Bubbles)"],
+      ["noise", "Basic Noise"],
+    ].forEach(([value, label]) => {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      textureSelect.appendChild(opt);
+    });
+    textureSelect.value = this.textureType;
+    textureSelect.addEventListener("change", () => {
+      this.textureType = textureSelect.value;
+      this._emitTextureUpdate();
+    });
+    textureLabel.appendChild(textureSelect);
+    textureSection.appendChild(textureLabel);
+
+    textureSection.appendChild(this._createSlider("Texture Scale", 1, 15, 0.5, this.textureScale, (val) => {
+      this.textureScale = val;
+      this._emitTextureUpdate();
+    }));
+
+    textureSection.appendChild(this._createSlider("Displacement", 0, 0.5, 0.01, this.textureDisplacement, (val) => {
+      this.textureDisplacement = val;
+      this._emitTextureUpdate();
+    }));
+
+    rightPanel.appendChild(textureSection);
 
     // ---- Scene import/export ----
     const sceneIO = document.createElement("div");
@@ -931,6 +994,16 @@ export class UIOptions {
   _emitAreaLightUpdate() {
     if (this.onAreaLightUpdate) {
       this.onAreaLightUpdate(this.areaLight);
+    }
+  }
+
+  _emitTextureUpdate() {
+    if (this.onTextureUpdate) {
+      this.onTextureUpdate({
+        type: this.textureType,
+        scale: this.textureScale,
+        displacement: this.textureDisplacement,
+      });
     }
   }
 

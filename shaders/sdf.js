@@ -41,6 +41,11 @@ float opMorph(float d1, float d2, float t) {
 // --- PBR Material uniforms ---
 uniform float uAOIntensity;
 
+// --- Procedural texture uniforms ---
+uniform int uTextureType; // 0=none, 1=voronoi, 2=fbm, 3=cellular, 4=noise
+uniform float uTextureScale;
+uniform float uTextureDisplacement;
+
 // --- Point lights (up to 4) ---
 #define MAX_POINT_LIGHTS 4
 uniform int uPointLightCount;
@@ -140,6 +145,127 @@ float sdOctahedron(vec3 p, float s, float rounding) {
     return length(vec3(q.x, q.y - si + k, q.z - k)) - rounding;
 }
 
+// ==================== Procedural Textures ====================
+float texHash(float n) {
+  return fract(sin(n) * 43758.5453123);
+}
+
+vec3 texHash3(vec3 p) {
+  p = vec3(
+    dot(p, vec3(127.1, 311.7, 74.7)),
+    dot(p, vec3(269.5, 183.3, 246.1)),
+    dot(p, vec3(113.5, 271.9, 124.6))
+  );
+  return fract(sin(p) * 43758.5453123);
+}
+
+float voronoi(vec3 p) {
+  vec3 i = floor(p);
+  vec3 f = fract(p);
+  float minDist = 1.0;
+  for (int z = -1; z <= 1; z++) {
+    for (int y = -1; y <= 1; y++) {
+      for (int x = -1; x <= 1; x++) {
+        vec3 neighbor = vec3(float(x), float(y), float(z));
+        vec3 point = texHash3(i + neighbor);
+        vec3 diff = neighbor + point - f;
+        float dist = length(diff);
+        minDist = min(minDist, dist);
+      }
+    }
+  }
+  return minDist;
+}
+
+float valueNoise(vec3 p) {
+  vec3 i = floor(p);
+  vec3 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float n = i.x + i.y * 57.0 + i.z * 113.0;
+  return mix(
+    mix(
+      mix(texHash(n + 0.0), texHash(n + 1.0), f.x),
+      mix(texHash(n + 57.0), texHash(n + 58.0), f.x), f.y
+    ),
+    mix(
+      mix(texHash(n + 113.0), texHash(n + 114.0), f.x),
+      mix(texHash(n + 170.0), texHash(n + 171.0), f.x), f.y
+    ),
+    f.z
+  );
+}
+
+float fbm(vec3 p, int octaves) {
+  float value = 0.0;
+  float amplitude = 0.5;
+  float frequency = 1.0;
+  for (int i = 0; i < 8; i++) {
+    if (i >= octaves) break;
+    value += amplitude * valueNoise(p * frequency);
+    frequency *= 2.0;
+    amplitude *= 0.5;
+  }
+  return value;
+}
+
+float cellular(vec3 p) {
+  vec3 i = floor(p);
+  vec3 f = fract(p);
+  float minDist1 = 1.0;
+  float minDist2 = 1.0;
+  for (int z = -1; z <= 1; z++) {
+    for (int y = -1; y <= 1; y++) {
+      for (int x = -1; x <= 1; x++) {
+        vec3 neighbor = vec3(float(x), float(y), float(z));
+        vec3 point = texHash3(i + neighbor);
+        vec3 diff = neighbor + point - f;
+        float dist = length(diff);
+        if (dist < minDist1) {
+          minDist2 = minDist1;
+          minDist1 = dist;
+        } else if (dist < minDist2) {
+          minDist2 = dist;
+        }
+      }
+    }
+  }
+  return minDist2 - minDist1;
+}
+
+float getTextureValue(vec3 p) {
+  if (uTextureType <= 0) return 0.0;
+  vec3 sp = p * uTextureScale;
+  if (uTextureType == 1) return voronoi(sp);
+  if (uTextureType == 2) return fbm(sp, 5);
+  if (uTextureType == 3) return cellular(sp);
+  if (uTextureType == 4) return valueNoise(sp);
+  return 0.0;
+}
+
+float getTextureDisplacement(vec3 p) {
+  if (uTextureType <= 0 || uTextureDisplacement <= 0.0) return 0.0;
+  float t = getTextureValue(p);
+  return (t - 0.5) * 2.0 * uTextureDisplacement;
+}
+
+// color is set for texture, we can adjust the color here... 
+vec3 hsv2rgb(vec3 c) {
+  vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+  vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+  return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+vec3 rainbow(float t) {
+  return hsv2rgb(vec3(t, 0.8, 0.95));
+}
+
+vec3 applyTextureColor(vec3 baseColor, vec3 p) {
+  if (uTextureType <= 0) return baseColor;
+  float t = getTextureValue(p);
+  vec3 texColor = rainbow(t);
+  return mix(baseColor, texColor, 0.7);
+}
+
 vec3 rotateVecByQuat(vec3 v, vec4 q) {
     vec3 t = 2.0 * cross(q.xyz, v);
     return v + q.w * t + cross(q.xyz, t);
@@ -223,6 +349,7 @@ float mapScene(vec3 p) {
         float scaleMin = min(uShapeScale[i].x, min(uShapeScale[i].y, uShapeScale[i].z));
         sd *= scaleMin;
         sd = applyBooleanOps(i, local, sd);
+        sd += getTextureDisplacement(p);
 
         if (doMorph) {
             if (i == 0) {
@@ -265,6 +392,7 @@ float mapSceneSimple(vec3 p) {
         float scaleMin = min(uShapeScale[i].x, min(uShapeScale[i].y, uShapeScale[i].z));
         sd *= scaleMin;
         sd = applyBooleanOps(i, local, sd);
+        sd += getTextureDisplacement(p);
 
         if (doMorph) {
             if (i == 0) { d0_store = sd; continue; }
@@ -520,6 +648,9 @@ void main() {
   vec3 albedo = (hitShape >= 0 && hitShape < uShapeCount) 
     ? uShapeColor[hitShape] 
     : vec3(0.8);
+  
+  // Apply procedural texture coloring
+  albedo = applyTextureColor(albedo, hitPos);
   
   float ao = calcAO(hitPos, N);
   
