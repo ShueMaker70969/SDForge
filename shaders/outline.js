@@ -1,3 +1,4 @@
+//purple outline when morphed
 export const OUTLINE_VS = `#version 300 es
 precision highp float;
 
@@ -33,6 +34,11 @@ uniform float uActiveId;
 uniform int uSelectedCount;
 uniform float uSelectedIds[16];
 
+// [NEW] Morph Uniforms to detect target shapes
+uniform int uMorphActive;      // 1 if morphing, 0 if not
+uniform float uMorphIdA_Enc;   // Encoded ID for Shape A
+uniform float uMorphIdB_Enc;   // Encoded ID for Shape B
+
 bool idMatches(float a, float b) {
   return abs(a - b) <= uIdTolerance;
 }
@@ -61,6 +67,14 @@ void main() {
   }
 
   bool isActive = (uActiveId > 0.0) && idMatches(idValue, uActiveId);
+  
+  // [NEW] Check if this pixel belongs to a morph target
+  bool isMorphTarget = false;
+  if (uMorphActive > 0) {
+      if (idMatches(idValue, uMorphIdA_Enc) || idMatches(idValue, uMorphIdB_Enc)) {
+          isMorphTarget = true;
+      }
+  }
 
   float edge = 0.0;
   int t = int(max(1.0, uThickness));
@@ -78,6 +92,12 @@ void main() {
 
   if (edge > 0.5) {
     vec3 color = isActive ? uActiveOutlineColor : uOutlineColor;
+    
+    // [NEW] Override outline color for morph targets (Purple)
+    if (isMorphTarget) {
+        color = vec3(0.8, 0.2, 1.0); 
+    }
+    
     outColor = vec4(color, 1.0);
   } else {
     outColor = base;

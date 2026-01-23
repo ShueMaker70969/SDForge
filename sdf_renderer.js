@@ -1,13 +1,9 @@
 import { SDF_VS, SDF_FS } from "./shaders/sdf.js";
 
-// ============================
-// Shader helpers
-// ============================
 function createShader(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
-
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
     console.error(gl.getShaderInfoLog(shader));
     gl.deleteShader(shader);
@@ -20,12 +16,10 @@ function createProgram(gl, vsSource, fsSource) {
   const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
   const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
   if (!vs || !fs) return null;
-
   const program = gl.createProgram();
   gl.attachShader(program, vs);
   gl.attachShader(program, fs);
   gl.linkProgram(program);
-
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
     console.error(gl.getProgramInfoLog(program));
     gl.deleteProgram(program);
@@ -36,9 +30,6 @@ function createProgram(gl, vsSource, fsSource) {
 
 const MAX_POINT_LIGHTS = 4;
 
-// ============================
-// SDFRenderer
-// ============================
 export class SDFRenderer {
   constructor(gl) {
     this.gl = gl;
@@ -49,17 +40,15 @@ export class SDFRenderer {
     this.uInvView = gl.getUniformLocation(this.program, "uInvView");
     this.uInvProj = gl.getUniformLocation(this.program, "uInvProj");
     this.uCamPos = gl.getUniformLocation(this.program, "uCameraPos");
-
-    // Directional light
     this.uLightDir = gl.getUniformLocation(this.program, "uLightDir");
 
-    // Morph uniform
+    // Morph uniforms
     this.uMorphT = gl.getUniformLocation(this.program, "uMorphT");
+    this.uMorphIdA = gl.getUniformLocation(this.program, "uMorphIdA");
+    this.uMorphIdB = gl.getUniformLocation(this.program, "uMorphIdB");
 
-    // PBR Material uniforms
+    // PBR uniforms
     this.uAOIntensity = gl.getUniformLocation(this.program, "uAOIntensity");
-
-    // Point lights
     this.uPointLightCount = gl.getUniformLocation(this.program, "uPointLightCount");
     this.uPointLightPos = [];
     this.uPointLightColor = [];
@@ -73,7 +62,6 @@ export class SDFRenderer {
       this.uPointLightRadius.push(gl.getUniformLocation(this.program, `uPointLightRadius[${i}]`));
     }
 
-    // Area light
     this.uAreaLightEnabled = gl.getUniformLocation(this.program, "uAreaLightEnabled");
     this.uAreaLightPos = gl.getUniformLocation(this.program, "uAreaLightPos");
     this.uAreaLightColor = gl.getUniformLocation(this.program, "uAreaLightColor");
@@ -82,7 +70,6 @@ export class SDFRenderer {
     this.uAreaLightUp = gl.getUniformLocation(this.program, "uAreaLightUp");
     this.uAreaLightSize = gl.getUniformLocation(this.program, "uAreaLightSize");
 
-    // Shape uniforms
     this.uShapeCount = gl.getUniformLocation(this.program, "uShapeCount");
     this.uShapePos   = gl.getUniformLocation(this.program, "uShapePos");
     this.uShapeType  = gl.getUniformLocation(this.program, "uShapeType");
@@ -99,10 +86,10 @@ export class SDFRenderer {
     this.uBooleanParams = gl.getUniformLocation(this.program, "uBooleanParams");
     this.uBooleanSmooth = gl.getUniformLocation(this.program, "uBooleanSmooth");
   }
+
   setShapes({ count, positions, rotations, types, params, scales }) {
     const gl = this.gl;
     gl.useProgram(this.program);
-
     gl.uniform1i(this.uShapeCount, count);
     gl.uniform3fv(this.uShapePos, positions);
     gl.uniform4fv(this.uShapeRot, rotations);
@@ -113,29 +100,30 @@ export class SDFRenderer {
   draw({ 
     view, proj, invView, invProj, cameraPos, width, height, shapeData, lightDir,
     morphT = 0.0,
-    // PBR parameters with defaults
+    morphIdA, // Optional args
+    morphIdB,
     aoIntensity = 1.0,
-    // Point lights array
     pointLights = [],
-    // Area light
     areaLight = null,
   }) {
     const gl = this.gl;
-
     gl.useProgram(this.program);
     gl.viewport(0, 0, width, height);
 
-    if (lightDir) {
-      gl.uniform3fv(this.uLightDir, lightDir);
-    }
+    if (lightDir) gl.uniform3fv(this.uLightDir, lightDir);
 
-    // Morph factor
+    // --- MORPH FIX ---
+    // Use the argument if provided, otherwise check the global window object
+    const finalIdA = (morphIdA !== undefined) ? morphIdA : (window.morphIdA || 0);
+    const finalIdB = (morphIdB !== undefined) ? morphIdB : (window.morphIdB || 1);
+
     gl.uniform1f(this.uMorphT, morphT);
+    gl.uniform1i(this.uMorphIdA, finalIdA);
+    gl.uniform1i(this.uMorphIdB, finalIdB);
+    // -----------------
 
-    // PBR Material parameters
     gl.uniform1f(this.uAOIntensity, aoIntensity);
 
-    // Point lights
     const lightCount = Math.min(pointLights.length, MAX_POINT_LIGHTS);
     gl.uniform1i(this.uPointLightCount, lightCount);
     
@@ -154,7 +142,6 @@ export class SDFRenderer {
       }
     }
 
-    // Area light
     if (areaLight && areaLight.enabled) {
       gl.uniform1i(this.uAreaLightEnabled, 1);
       gl.uniform3fv(this.uAreaLightPos, areaLight.position || [0, 5, 0]);
@@ -167,14 +154,12 @@ export class SDFRenderer {
       gl.uniform1i(this.uAreaLightEnabled, 0);
     }
 
-    // Camera uniforms
     gl.uniformMatrix4fv(this.uView, false, view);
     gl.uniformMatrix4fv(this.uProj, false, proj);
     gl.uniformMatrix4fv(this.uInvView, false, invView);
     gl.uniformMatrix4fv(this.uInvProj, false, invProj);
     gl.uniform3fv(this.uCamPos, cameraPos);
 
-    // shape uniforms MUST be here
     gl.uniform1i(this.uShapeCount, shapeData.count);
     gl.uniform3fv(this.uShapePos, shapeData.positions);
     gl.uniform4fv(this.uShapeRot, shapeData.rotations);
@@ -191,10 +176,7 @@ export class SDFRenderer {
     gl.uniform4fv(this.uBooleanParams, shapeData.booleanParams);
     gl.uniform1fv(this.uBooleanSmooth, shapeData.booleanSmooths);
 
-    gl.drawBuffers([
-      gl.COLOR_ATTACHMENT0,
-      gl.COLOR_ATTACHMENT1
-    ]);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 }

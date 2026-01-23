@@ -33,6 +33,8 @@ uniform vec3 uLightDir;
 
 // --- Morph Helper ---
 uniform float uMorphT;
+uniform int uMorphIdA; // [NEW] Selection A
+uniform int uMorphIdB; // [NEW] Selection B
 
 float opMorph(float d1, float d2, float t) {
     return mix(d1, d2, clamp(t, 0.0, 1.0));
@@ -203,17 +205,18 @@ float applyBooleanOps(int shapeIndex, vec3 local, float baseSd) {
   return result;
 }
 
-// --- OPTIMIZED MAP SCENE with Morph ---
+// --- DYNAMIC SELECTION MAP SCENE ---
 float mapScene(vec3 p) {
     float d = 1e9;
     gHitShape = -1;
     
-    float d0_store = 1e9; 
+    float dA_store = 1e9; 
     bool doMorph = (uMorphT > 0.01 && uShapeCount > 1);
 
     for (int i = 0; i < MAX_SHAPES; i++) {
         if (i >= uShapeCount) break;
 
+        // 1. Standard Geometry
         vec3 q = p - uShapePos[i];
         vec4 rot = uShapeRot[i];
         vec3 local = rotateVecByQuat(q, vec4(-rot.xyz, rot.w));
@@ -224,21 +227,23 @@ float mapScene(vec3 p) {
         sd *= scaleMin;
         sd = applyBooleanOps(i, local, sd);
 
+        // 2. MORPH LOGIC (Dynamic Selection)
         if (doMorph) {
-            if (i == 0) {
-                d0_store = sd;
-                continue;      
+            if (i == uMorphIdA) {
+                dA_store = sd; 
+                continue; // Wait for B
             }
-            if (i == 1) {
-                sd = opMorph(d0_store, sd, uMorphT);
+            if (i == uMorphIdB) {
+                sd = opMorph(dA_store, sd, uMorphT);
                 if (sd < d) {
                     d = sd;
-                    gHitShape = (uMorphT < 0.5) ? 0 : 1;
+                    gHitShape = (uMorphT < 0.5) ? uMorphIdA : uMorphIdB;
                 }
-                continue;
+                continue; 
             }
         }
 
+        // 3. Standard Union
         if (sd < d) {
             d = sd;
             gHitShape = i;
@@ -250,7 +255,7 @@ float mapScene(vec3 p) {
 // Scene map without shape tracking (for shadow/AO rays)
 float mapSceneSimple(vec3 p) {
     float d = 1e9;
-    float d0_store = 1e9;
+    float dA_store = 1e9;
     bool doMorph = (uMorphT > 0.01 && uShapeCount > 1);
 
     for (int i = 0; i < MAX_SHAPES; i++) {
@@ -267,8 +272,8 @@ float mapSceneSimple(vec3 p) {
         sd = applyBooleanOps(i, local, sd);
 
         if (doMorph) {
-            if (i == 0) { d0_store = sd; continue; }
-            if (i == 1) { sd = opMorph(d0_store, sd, uMorphT); }
+            if (i == uMorphIdA) { dA_store = sd; continue; }
+            if (i == uMorphIdB) { sd = opMorph(dA_store, sd, uMorphT); }
         }
 
         d = min(d, sd);
@@ -571,4 +576,3 @@ void main() {
   gl_FragDepth = clipPos.z / clipPos.w * 0.5 + 0.5;
 }
 `;
-

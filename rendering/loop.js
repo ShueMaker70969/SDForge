@@ -1,3 +1,8 @@
+/*In drawOutlinePass: Added logic to check window.morphIdA and window.morphIdB.
+
+Calculates the "Encoded ID" (the / 255.0 math) so the shader understands which pixels match the morphing shapes.
+
+Sends the uMorphActive signal to turn the outline purple.*/
 import { mat4, vec3, quat } from "https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/esm/index.js";
 import { processPendingPick } from "../controls/input.js";
 import {
@@ -149,6 +154,8 @@ function drawScenePass({
     width: gl.canvas.width,
     height: gl.canvas.height,
     morphT: window.morphFactor ?? 0,
+    morphIdA: window.morphIdA, // Pass globals to renderer
+    morphIdB: window.morphIdB,
     shapeData: {
       count: shapes.length,
       positions: shapeData.positions,
@@ -236,6 +243,23 @@ function drawOutlinePass({
   gl.uniform1i(outlineUniforms.selectedCount, selectionCount);
   gl.uniform1fv(outlineUniforms.selectedIds, selectedIdArray);
   gl.uniform1f(outlineUniforms.idTolerance, SHAPE_ID_TOLERANCE);
+
+  // [NEW] Purple Outline Logic for Morph Targets
+  // We fetch locations manually because they aren't in 'outlineUniforms' (which comes from context.js)
+  const uMorphActiveLoc = gl.getUniformLocation(outlineProgram, "uMorphActive");
+  const uMorphIdALoc = gl.getUniformLocation(outlineProgram, "uMorphIdA_Enc");
+  const uMorphIdBLoc = gl.getUniformLocation(outlineProgram, "uMorphIdB_Enc");
+
+  // Determine if morphing is active based on globals
+  const isMorphing = (window.morphIdA >= 0 && window.morphIdB >= 0) ? 1 : 0;
+  
+  gl.uniform1i(uMorphActiveLoc, isMorphing);
+  
+  if (isMorphing) {
+      // Calculate encoded ID: (id + 1) / 255.0
+      gl.uniform1f(uMorphIdALoc, (window.morphIdA + 1) / 255.0);
+      gl.uniform1f(uMorphIdBLoc, (window.morphIdB + 1) / 255.0);
+  }
 
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }

@@ -1,3 +1,7 @@
+/* Defaults window.morphIdA and window.morphIdB to -1 (nothing selected).
+Validation: Checks if you selected exactly 2 shapes. If not, it triggers the Red Warning Box in the UI.
+Signs: If valid, it updates the UI text to green, saying "Active: Shape 0 & Shape 2".
+Unmorph Logic: Resets IDs to -1 and updates the UI text back to gray.*/
 import { mat4, vec3 } from "https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/esm/index.js";
 import { OrbitCamera } from "./camera.js";
 import { SDFRenderer } from "./sdf_renderer.js";
@@ -37,7 +41,10 @@ const BOOLEAN_MODE_MAP = {
   smoothUnion: BOOLEAN_OP_SMOOTH_UNION,
 };
 
+// [UPDATED] Start with NO selection (-1) to prevent auto-morphing
 window.morphFactor = 0.0;
+window.morphIdA = -1;
+window.morphIdB = -1;
 
 const canvas = document.getElementById("glcanvas");
 const rendering = initRenderingContext(canvas);
@@ -145,6 +152,34 @@ ui = createUIBindings({
     areaLight.size = Array.isArray(light.size) ? [...light.size] : [...areaLight.size];
   },
 });
+
+// [UPDATED] Set Morph Targets with Sorting Fix
+ui.onSetMorphTargets = () => {
+  // 1. Validation Logic
+  if (selectedShapes.length !== 2) {
+    ui.updateMorphStatus(`Please select exactly 2 shapes!<br>(You selected ${selectedShapes.length})`, "error");
+    return;
+  }
+
+  // 2. Sorting Fix: Ensure A is always the lower ID so the shader loop finds it first
+  const id1 = selectedShapes[0];
+  const id2 = selectedShapes[1];
+  
+  window.morphIdA = Math.min(id1, id2);
+  window.morphIdB = Math.max(id1, id2);
+  
+  // 3. Success Logic
+  ui.updateMorphStatus(`Active: Shape ${window.morphIdA} & Shape ${window.morphIdB}`, "success");
+  console.log(`Morph targets updated: ${window.morphIdA} <-> ${window.morphIdB}`);
+};
+
+// [NEW] Unmorph Button Logic
+ui.onUnmorph = () => {
+    window.morphIdA = -1;
+    window.morphIdB = -1;
+    // Reset notification to gray default
+    ui.updateMorphStatus(`Targets Reset`, "info");
+};
 
 ui.setLightSlider(lightingState.angle * 180 / Math.PI);
 
