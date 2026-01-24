@@ -41,6 +41,12 @@ export function createGizmoController(gl, attributeLocations, options = {}) {
     dragStartRot: quat.create(),
     dragStartScale: vec3.create(),
     //
+    snap: {
+      enabled: false,
+      translateStep: 0.25,        // world units
+      rotateStep: Math.PI / 18,   // 10°
+      scaleStep: 0.2,             // scale factor
+    },
   };
 
   const buffers = {
@@ -70,6 +76,40 @@ export function createGizmoController(gl, attributeLocations, options = {}) {
     if (source !== "ui") {
       callbacks.onModeChanged(state.mode);
     }
+  }
+
+  function setSnapEnabled(enabled) {
+    if (state.snap.enabled === enabled) return;
+
+    // Handle mid-drag transitions cleanly
+    if (enabled && state.dragging) {
+      if (state.dragType === "rotate") {
+        quat.copy(state.rotationStartQuat, state.dragStartRot);
+        // rotationStartVec stays valid
+      }
+
+      if (state.dragType === "translate") {
+        vec3.copy(state.startPos, state.dragStartPos);
+      }
+
+      if (state.dragType === "scale") {
+        state.startScale =
+          state.dragStartScale[state.activeAxisIndex];
+      }
+    }
+    state.snap.enabled = enabled;
+  }
+
+  function setRotateSnapStep(rad) {
+    state.snap.rotateStep = rad;
+  }
+
+  function setTranslateSnapStep(step) {
+    state.snap.translateStep = step;
+  }
+
+  function setScaleSnapStep(step) {
+    state.snap.scaleStep = step;
   }
 
   function getMode() {
@@ -134,19 +174,34 @@ export function createGizmoController(gl, attributeLocations, options = {}) {
       const axisDir = GIZMO_DIRS[state.activeAxisIndex];
       const t = projectRayToAxis(ray.origin, ray.dir, state.startPos, axisDir);
       if (t !== null) {
-        const delta = t - state.startT;
-        const newPos = vec3.scaleAndAdd([], state.startPos, axisDir, delta);
-        shape.pos = newPos;
+        let delta = t - state.startT;
+        //Additional code added for snapping, when enabled
+        if (state.snap.enabled) {
+          delta =
+            Math.round(delta / state.snap.translateStep) *
+            state.snap.translateStep;
+        }
+
+        vec3.scaleAndAdd(shape.pos, state.startPos, axisDir, delta);
       }
     } else if (state.dragType === "rotate") {
       handleRotationDrag(shape, ray.dir, ray.origin, state);
     } else if (state.dragType === "scale") {
       const axisDir = getScaleGizmoDirs(shape)[state.activeAxisIndex];
       const t = projectRayToAxis(ray.origin, ray.dir, state.startPos, axisDir);
+
       if (t !== null) {
         const delta = t - state.startT;
-        const factor = Math.exp(delta * 0.3);
-        shape.scale[state.activeAxisIndex] = Math.max(0.05, state.startScale * factor);
+        let factor = Math.exp(delta * 0.3);
+
+        if (state.snap.enabled) {
+          factor =
+            Math.round(factor / state.snap.scaleStep) *
+            state.snap.scaleStep;
+        }
+
+        shape.scale[state.activeAxisIndex] =
+          Math.max(0.05, state.startScale * factor);
       }
     }
   }
@@ -212,6 +267,10 @@ export function createGizmoController(gl, attributeLocations, options = {}) {
     get lastMouseRay() {
       return state.lastMouseRay;
     },
+    setSnapEnabled,
+    setRotateSnapStep,
+    setTranslateSnapStep,
+    setScaleSnapStep,
   };
 }
 
@@ -391,19 +450,62 @@ function beginScaleDrag(shape, axisIndex, ray, state) {
 function handleRotationDrag(shape, rayDir, rayOrigin, state) {
   const hit = intersectRayPlane(rayOrigin, rayDir, shape.pos, state.rotationAxis);
   if (!hit) return;
-  if (!projectPointToPlaneVector(hit, shape.pos, state.rotationAxis, state.rotationCurrentVec)) {
-    return;
+
+  if (!projectPointToPlaneVector(
+    hit,
+    shape.pos,
+    state.rotationAxis,
+    state.rotationCurrentVec
+  )) return;
+
+  let angle = signedAngleBetween(
+    state.rotationStartVec,
+    state.rotationCurrentVec,
+    state.rotationAxis
+  );
+
+  if (!isFinite(angle) || Math.abs(angle) < 1e-4) return;
+
+  // 🔹 SNAP MODE
+  if (state.snap.enabled) {
+    angle =
+      Math.round(angle / state.snap.rotateStep) * state.snap.rotateStep;
+
+    quat.setAxisAngle(
+      state.rotationDeltaQuat,
+      state.rotationAxis,
+      angle
+    );
+
+    // IMPORTANT: apply from drag-start rotation
+    quat.mul(
+      shape.rotation,
+      state.rotationDeltaQuat,
+      state.dragStartRot
+    );
   }
-  const angle = signedAngleBetween(state.rotationStartVec, state.rotationCurrentVec, state.rotationAxis);
-  if (!isFinite(angle) || Math.abs(angle) < 1e-4) {
-    return;
+  // 🔹 FREE ROTATION MODE
+  else {
+    quat.setAxisAngle(
+      state.rotationDeltaQuat,
+      state.rotationAxis,
+      angle
+    );
+
+    quat.mul(
+      shape.rotation,
+      state.rotationDeltaQuat,
+      state.rotationStartQuat
+    );
+
+    // incremental baseline update
+    quat.copy(state.rotationStartQuat, shape.rotation);
+    vec3.copy(state.rotationStartVec, state.rotationCurrentVec);
   }
-  quat.setAxisAngle(state.rotationDeltaQuat, state.rotationAxis, angle);
-  quat.mul(shape.rotation, state.rotationDeltaQuat, state.rotationStartQuat);
+
   quat.normalize(shape.rotation, shape.rotation);
-  quat.copy(state.rotationStartQuat, shape.rotation);
-  vec3.copy(state.rotationStartVec, state.rotationCurrentVec);
 }
+
 
 function pickTranslationAxis(ray, origin) {
   const threshold = 0.15;

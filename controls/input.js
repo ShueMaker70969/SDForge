@@ -19,6 +19,7 @@ let dragging = false;
 let lastX = 0;
 let lastY = 0;
 let button = 0;
+let ctrlDown = false;
 
 let pendingPick = null;
 const pickPixel = new Uint8Array(4);
@@ -166,6 +167,12 @@ function preventContextMenu(e) {
   e.preventDefault();
 }
 
+window.addEventListener("keyup", e => {
+  if (e.key === "Control") {
+    gizmoRef.setSnapEnabled(false);
+  }
+});
+
 function onKeyDown(e) {
   if (shouldIgnoreKey(e.target)) {
     return;
@@ -180,6 +187,10 @@ function onKeyDown(e) {
       notifySceneGeometryChanged();
     }
     return;
+  }
+
+  if (e.key === "Control") {
+    gizmoRef.setSnapEnabled(true);
   }
 
   if (e.shiftKey && key === "d") {
