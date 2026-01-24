@@ -161,12 +161,15 @@ float evalPrimitive(int type, vec3 local, vec4 params) {
 }
 
 // --- Booleans ---
-float evaluateBooleanPrimitive(int shapeIndex, vec3 parentLocal, int slot) {
+float evaluateBooleanPrimitive(int shapeIndex, vec3 parentLocalNorm, int slot) {
   int globalIndex = shapeIndex * MAX_BOOLEAN_OPS + slot;
   int type = uBooleanShapeType[globalIndex];
-  vec3 childPos = uBooleanPos[globalIndex];
+  // Convert normalized parent coordinates/transforms back into the parent's object space.
+  vec3 parentScale = max(uShapeScale[shapeIndex], vec3(0.0001));
+  vec3 parentLocal = parentLocalNorm * parentScale;
+  vec3 childPos = uBooleanPos[globalIndex] * parentScale;
   vec4 childRot = uBooleanRot[globalIndex];
-  vec3 childScale = uBooleanScale[globalIndex];
+  vec3 childScale = max(uBooleanScale[globalIndex] * parentScale, vec3(0.0001));
   vec4 params = uBooleanParams[globalIndex];
 
   vec3 q = parentLocal - childPos;
