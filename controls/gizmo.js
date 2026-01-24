@@ -36,6 +36,11 @@ export function createGizmoController(gl, attributeLocations, options = {}) {
     rotationCurrentVec: vec3.create(),
     rotationStartQuat: quat.create(),
     rotationDeltaQuat: quat.create(),
+    // These three parameters are required, to store the state when "drag begins". Different from startScale and startPos!!
+    dragStartPos: vec3.create(),
+    dragStartRot: quat.create(),
+    dragStartScale: vec3.create(),
+    //
   };
 
   const buffers = {
@@ -84,6 +89,19 @@ export function createGizmoController(gl, attributeLocations, options = {}) {
     state.dragType = null;
     state.activeAxisIndex = -1;
     state.axisConstraint = null;
+  }
+  function cancelDrag() {
+    if (!state.dragging || selectedShape === -1) {
+      return;
+    }
+    const shape = shapes[selectedShape];
+    if (!shape) return;
+
+    // Restore the snapshot here, based on the initial state
+    vec3.copy(shape.pos, state.dragStartPos);
+    quat.copy(shape.rotation, state.dragStartRot);
+    vec3.copy(shape.scale, state.dragStartScale);
+    resetDrag();
   }
 
   function draw(shape) {
@@ -185,6 +203,7 @@ export function createGizmoController(gl, attributeLocations, options = {}) {
     draw,
     isDragging,
     resetDrag,
+    cancelDrag,
     getActiveAxis,
     handleMouseDown,
     handleMouseMove,
@@ -325,7 +344,14 @@ function buildCircleBasis(axis) {
   return { tangent, bitangent };
 }
 
+function beginDragSnapshot(shape, state) {
+  vec3.copy(state.dragStartPos, shape.pos);
+  quat.copy(state.dragStartRot, shape.rotation);
+  vec3.copy(state.dragStartScale, shape.scale);
+}
+
 function beginTranslationDrag(shape, axisIndex, ray, state) {
+  beginDragSnapshot(shape, state);
   state.activeAxisIndex = axisIndex;
   state.dragging = true;
   state.dragType = "translate";
@@ -336,6 +362,7 @@ function beginTranslationDrag(shape, axisIndex, ray, state) {
 }
 
 function beginRotationDrag(shape, axisIndex, hitPoint, state) {
+  beginDragSnapshot(shape, state);
   const axisDir = GIZMO_DIRS[axisIndex];
   if (!projectPointToPlaneVector(hitPoint, shape.pos, axisDir, state.rotationStartVec)) {
     return false;
@@ -349,6 +376,7 @@ function beginRotationDrag(shape, axisIndex, hitPoint, state) {
 }
 
 function beginScaleDrag(shape, axisIndex, ray, state) {
+  beginDragSnapshot(shape, state);
   state.activeAxisIndex = axisIndex;
   state.dragging = true;
   state.dragType = "scale";

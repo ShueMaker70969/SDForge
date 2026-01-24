@@ -109,6 +109,9 @@ function onMouseDown(e) {
     queuePickRequest(e.clientX, e.clientY, e.shiftKey);
     return;
   }
+  if (e.button === 2) { // right click
+    gizmoRef?.cancelDrag();
+  }
 
   if (e.button !== 1) {
     dragging = false;
