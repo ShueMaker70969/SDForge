@@ -44,8 +44,10 @@ export class SDFRenderer {
 
     // Morph uniforms
     this.uMorphT = gl.getUniformLocation(this.program, "uMorphT");
+    this.uMorphT2 = gl.getUniformLocation(this.program, "uMorphT2"); // NEW
     this.uMorphIdA = gl.getUniformLocation(this.program, "uMorphIdA");
     this.uMorphIdB = gl.getUniformLocation(this.program, "uMorphIdB");
+    this.uMorphIdC = gl.getUniformLocation(this.program, "uMorphIdC"); // NEW
 
     // PBR uniforms
     this.uAOIntensity = gl.getUniformLocation(this.program, "uAOIntensity");
@@ -116,10 +118,13 @@ export class SDFRenderer {
     // Use the argument if provided, otherwise check the global window object
     const finalIdA = (morphIdA !== undefined) ? morphIdA : (window.morphIdA || 0);
     const finalIdB = (morphIdB !== undefined) ? morphIdB : (window.morphIdB || 1);
+    const finalIdC = (morphIdC !== undefined) ? morphIdC : (window.morphIdC || -1);
 
     gl.uniform1f(this.uMorphT, morphT);
+    gl.uniform1f(this.uMorphT2, window.morphFactor2 || 0.0); // Use global for 2nd slider
     gl.uniform1i(this.uMorphIdA, finalIdA);
     gl.uniform1i(this.uMorphIdB, finalIdB);
+    gl.uniform1i(this.uMorphIdC, finalIdC);
     // -----------------
 
     gl.uniform1f(this.uAOIntensity, aoIntensity);

@@ -175,6 +175,28 @@ export class UIOptions {
     });
     morphLabel.appendChild(morphSlider);
 
+    // ---- Slider 2 (Morph Result -> Shape C) ----
+    const morphLabel2 = document.createElement("label");
+    morphLabel2.style.display = "flex";
+    morphLabel2.style.flexDirection = "column";
+    morphLabel2.style.gap = "0.25rem";
+    morphLabel2.style.marginTop = "5px";
+    morphLabel2.innerHTML = 'Morph Stage 2 (-> C): <span id="morphVal2">0.00</span>';
+
+    const morphSlider2 = document.createElement("input");
+    morphSlider2.type = "range";
+    morphSlider2.min = "0";
+    morphSlider2.max = "1";
+    morphSlider2.step = "0.01";
+    morphSlider2.value = "0";
+    morphSlider2.addEventListener("input", (e) => {
+    const val = parseFloat(e.target.value);
+    morphContainer.querySelector("#morphVal2").textContent = val.toFixed(2);
+    window.morphFactor2 = val; // NEW GLOBAL
+    });
+    morphLabel2.appendChild(morphSlider2);
+    morphContainer.appendChild(morphLabel2);
+
     // 2. Control Buttons Row
     const btnRow = document.createElement("div");
     btnRow.style.display = "flex";

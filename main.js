@@ -1,7 +1,3 @@
-/* Defaults window.morphIdA and window.morphIdB to -1 (nothing selected).
-Validation: Checks if you selected exactly 2 shapes. If not, it triggers the Red Warning Box in the UI.
-Signs: If valid, it updates the UI text to green, saying "Active: Shape 0 & Shape 2".
-Unmorph Logic: Resets IDs to -1 and updates the UI text back to gray.*/
 import { mat4, vec3 } from "https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/esm/index.js";
 import { OrbitCamera } from "./camera.js";
 import { SDFRenderer } from "./sdf_renderer.js";
@@ -41,10 +37,14 @@ const BOOLEAN_MODE_MAP = {
   smoothUnion: BOOLEAN_OP_SMOOTH_UNION,
 };
 
-// [UPDATED] Start with NO selection (-1) to prevent auto-morphing
+// ==========================================
+// [UPDATED] GLOBAL VARIABLES FOR TRI-MORPH
+// ==========================================
 window.morphFactor = 0.0;
+window.morphFactor2 = 0.0; // New: Second Slider value
 window.morphIdA = -1;
 window.morphIdB = -1;
+window.morphIdC = -1;      // New: Third Shape ID
 
 const canvas = document.getElementById("glcanvas");
 const rendering = initRenderingContext(canvas);
@@ -153,31 +153,39 @@ ui = createUIBindings({
   },
 });
 
-// [UPDATED] Set Morph Targets with Sorting Fix
+// ==========================================
+// [UPDATED] MORPH SELECTION LOGIC
+// ==========================================
 ui.onSetMorphTargets = () => {
-  // 1. Validation Logic
-  if (selectedShapes.length !== 2) {
-    ui.updateMorphStatus(`Please select exactly 2 shapes!<br>(You selected ${selectedShapes.length})`, "error");
+  // 1. Validation: Allow 2 OR 3 shapes
+  if (selectedShapes.length < 2 || selectedShapes.length > 3) {
+    ui.updateMorphStatus(`Select 2 or 3 shapes!<br>(You selected ${selectedShapes.length})`, "error");
     return;
   }
 
-  // 2. Sorting Fix: Ensure A is always the lower ID so the shader loop finds it first
+  // 2. Sort the first two IDs (A and B) so the shader loop finds them in order
   const id1 = selectedShapes[0];
   const id2 = selectedShapes[1];
-  
   window.morphIdA = Math.min(id1, id2);
   window.morphIdB = Math.max(id1, id2);
-  
-  // 3. Success Logic
-  ui.updateMorphStatus(`Active: Shape ${window.morphIdA} & Shape ${window.morphIdB}`, "success");
-  console.log(`Morph targets updated: ${window.morphIdA} <-> ${window.morphIdB}`);
+
+  // 3. Handle the optional 3rd shape (C)
+  if (selectedShapes.length === 3) {
+      window.morphIdC = selectedShapes[2];
+      ui.updateMorphStatus(`Tri-Morph: ${window.morphIdA} ↔ ${window.morphIdB} ↔ ${window.morphIdC}`, "success");
+      console.log(`Tri-Morph active: ${window.morphIdA} ↔ ${window.morphIdB} ↔ ${window.morphIdC}`);
+  } else {
+      window.morphIdC = -1; // Disable C if only 2 selected
+      ui.updateMorphStatus(`Dual-Morph: ${window.morphIdA} ↔ ${window.morphIdB}`, "success");
+      console.log(`Dual-Morph active: ${window.morphIdA} ↔ ${window.morphIdB}`);
+  }
 };
 
-// [NEW] Unmorph Button Logic
+// [UPDATED] Unmorph Button Logic
 ui.onUnmorph = () => {
     window.morphIdA = -1;
     window.morphIdB = -1;
-    // Reset notification to gray default
+    window.morphIdC = -1;
     ui.updateMorphStatus(`Targets Reset`, "info");
 };
 
